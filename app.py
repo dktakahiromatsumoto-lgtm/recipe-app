@@ -21,21 +21,23 @@ if not st.session_state.logged_in:
 # 実際にはCSVやデータベースから読み込みますが、ここではデモデータを定義します
 # --- 変更箇所ここから ---
 def load_data():
-    # Excelファイルを読み込む
+    # --- 変更：スプレッドシート読み込み ---
+@st.cache_data(ttl=60) # 60秒ごとにデータを更新する設定
+def load_data():
+    # ↓下の " " の中に、スプレッドシートで発行したCSVのURLを貼り付けてください！
+    csv_url = "ここにhttps://...から始まるCSVのURLを貼り付け"
+
     try:
-        df = pd.read_excel("recipes.xlsx")
+        df = pd.read_csv(csv_url)
         
-        # 「材料」がExcelだと文字(例: "肉、野菜")なので、リスト(例: ["肉", "野菜"])に変換する処理
-        # ここでは読点「、」で区切る設定にしています
+        # データ整理（Excelの時と同じ処理）
         df["ingredients"] = df["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
-        
-        # 欠損値（空欄）があれば埋める
         df = df.fillna("")
         return df
-        
-    except FileNotFoundError:
-        st.error("エラー: 'recipes.xlsx' が見つかりません。デスクトップに保存しましたか？")
-        return pd.DataFrame() # 空のデータを返す
+    except Exception as e:
+        st.error(f"読み込みエラー: URLを確認してください")
+        return pd.DataFrame()
+# -----------------------------------
 # --- 変更箇所ここまで ---
 
 df = load_data()
