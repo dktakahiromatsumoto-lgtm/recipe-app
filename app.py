@@ -6,7 +6,12 @@ from rapidfuzz import fuzz
 from streamlit_mic_recorder import speech_to_text
 
 # ページ設定
-st.set_page_config(page_title="Recipe Viewer", layout="wide")
+# ★ここを変更：page_icon に画像をセットしました！
+st.set_page_config(
+    page_title="Recipe Viewer", 
+    page_icon="img/favicon.png", 
+    layout="wide"
+)
 
 # ==========================================
 # 👇 設定エリア：URL設定完了済み
@@ -93,7 +98,7 @@ def generate_print_html(row, ing_dict):
     # 作り方の改行をHTMLの<br>に変換
     steps_html = str(row["steps"]).replace("\n", "<br>")
 
-    # HTMLテンプレート（ボタン類は一切含まない純粋なレシピデータのみ）
+    # HTMLテンプレート
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -149,14 +154,12 @@ def generate_print_html(row, ing_dict):
 # --- 全画面表示用ダイアログ ---
 @st.dialog("レシピ詳細", width="large")
 def show_recipe_modal(row, ing_dict):
-    # タイトルと印刷ボタンを並べるためのカラム作成
     col_header, col_print = st.columns([8, 1])
     
     with col_header:
         st.header(row["title"])
     
     with col_print:
-        # ★ここを変更：ボタンをアイコンのみにしました★
         html_data = generate_print_html(row, ing_dict)
         st.download_button(
             label="🖨️",
@@ -198,7 +201,6 @@ def show_recipe_modal(row, ing_dict):
         st.write(row["steps"])
 
     st.divider()
-    # 意見ボタン（ここは画面用なので残りますが、印刷物には含まれません）
     store_enc = urllib.parse.quote(str(st.session_state.store_name))
     recipe_enc = urllib.parse.quote(str(row['title']))
     fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
@@ -320,7 +322,7 @@ elif mode == "🔍 レシピ検索":
                         if row["image"] and str(row["image"]).startswith("http"):
                             st.image(row["image"], use_container_width=True)
                         
-                        # タイトルボタン（全画面呼び出し）
+                        # タイトルボタン
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         
