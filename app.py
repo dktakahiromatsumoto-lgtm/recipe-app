@@ -9,30 +9,20 @@ from streamlit_mic_recorder import speech_to_text
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
 
 # ==========================================
-# 👇 設定エリア：全てのURL設定完了済み！
+# 👇 設定エリア：URL設定完了済み
 # ==========================================
-
-# 1. レシピのCSV
 recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=0&single=true&output=csv"
-
-# 2. 食材マスタのCSV
 ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=805502789&single=true&output=csv"
-
-# 3. お知らせのCSV
 news_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=1725848377&single=true&output=csv"
-
-# 4. 店舗マスタのCSV
 store_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=285648220&single=true&output=csv"
 
-# 5. 【お知らせ用】Googleフォーム設定
+# フォーム設定
 news_form_url = "https://docs.google.com/forms/d/e/1FAIpQLSeLSyph6KJ3aPPgdCCxKuZ2tRLCZI13ftsM3-godUqzB1hOyg/viewform?usp=pp_url"
 news_entry_store = "entry.1108417758"
 news_entry_title = "entry.1493447951"
-
-# 6. 【フィードバック用】Googleフォーム設定（★設定しました！）
 feedback_form_url = "https://docs.google.com/forms/d/e/1FAIpQLSegPgDFDG8h_cxV2Z7BcBkw3rZWjCUU9mCpIPqwwp_C-laXPQ/viewform?usp=pp_url"
-feedback_entry_store = "entry.1319375613"  # 店舗名
-feedback_entry_recipe = "entry.973206102"  # レシピ名
+feedback_entry_store = "entry.1319375613"
+feedback_entry_recipe = "entry.973206102"
 
 # ==========================================
 
@@ -82,6 +72,49 @@ def load_data():
 df, ingredient_dict, df_news, df_stores = load_data()
 
 
+# --- 全画面表示用ダイアログ ---
+@st.dialog("レシピ詳細", width="large")
+def show_recipe_modal(row, ing_dict):
+    st.header(row["title"])
+    
+    if row["image"] and str(row["image"]).startswith("http"):
+        st.image(row["image"], use_container_width=True)
+    
+    st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
+    st.divider()
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.subheader("🛒 材料")
+        for ingredient_name in row["ingredients"]:
+            ingredient_name = str(ingredient_name).strip()
+            matched_info = None
+            if ingredient_name in ing_dict:
+                matched_info = ing_dict[ingredient_name]
+            else:
+                for master_name, info in ing_dict.items():
+                    if ingredient_name in master_name: matched_info = info; break
+            
+            if matched_info:
+                with st.popover(f"ℹ️ {ingredient_name}"):
+                    st.markdown(f"**{matched_info.get('商品名', ingredient_name)}**")
+                    st.caption(f"期限: {matched_info.get('賞味期限', '-')}")
+                    st.caption(f"保管: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
+            else:
+                st.write(f"・ {ingredient_name}")
+
+    with col2:
+        st.subheader("📝 作り方")
+        st.write(row["steps"])
+
+    st.divider()
+    store_enc = urllib.parse.quote(str(st.session_state.store_name))
+    recipe_enc = urllib.parse.quote(str(row['title']))
+    fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
+    st.link_button("💬 このレシピへ意見を送る", fb_link, use_container_width=True)
+
+
 # --- ログイン機能 ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -99,29 +132,27 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.store_name = match.iloc[0]["store_name"]
                 st.rerun()
-            else: st.error("店舗コードまたはパスワードが違います")
+            else: st.error("違います")
         else:
             if input_password == "secret123":
                  st.session_state.logged_in = True
                  st.session_state.store_name = "管理者(緊急)"
                  st.rerun()
-            else: st.error("ログインできません")
+            else: st.error("エラー")
     st.stop()
 
 # --- レイアウト ---
 st.sidebar.title(f"👤 {st.session_state.store_name}")
-mode = st.sidebar.radio("メニュー", ["🏠 ホーム(お知らせ)", "🔍 レシピ検索", "🎓 レシピ検定"])
+mode = st.sidebar.radio("メニュー", ["🏠 ホーム", "🔍 レシピ検索", "🎓 検定"])
 st.sidebar.divider()
 
 # --- 🏠 ホーム ---
-if mode == "🏠 ホーム(お知らせ)":
-    st.title("📢 本部からのお知らせ")
+if mode == "🏠 ホーム":
+    st.title("📢 お知らせ")
     if df_news.empty: st.info("現在、お知らせはありません。")
     else:
         if "date" in df_news.columns:
-            try:
-                df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce')
-                df_news = df_news.sort_values("date", ascending=False)
+            try: df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce'); df_news = df_news.sort_values("date", ascending=False)
             except: pass
         for index, row in df_news.iterrows():
             is_important = str(row.get("important", "")).upper() == "TRUE"
@@ -137,7 +168,6 @@ if mode == "🏠 ホーム(お知らせ)":
                     st.write(row.get('content', ''))
                 with col2:
                     st.write("") 
-                    # お知らせ用のリンク生成
                     store_enc = urllib.parse.quote(str(st.session_state.store_name))
                     title_enc = urllib.parse.quote(str(row.get('title', '')))
                     link = f"{news_form_url}&{news_entry_store}={store_enc}&{news_entry_title}={title_enc}"
@@ -151,10 +181,10 @@ elif mode == "🔍 レシピ検索":
     col_mic, col_text = st.columns([1, 4], gap="small")
     with col_mic:
         st.write("") 
-        voice_text = speech_to_text(language='ja', start_prompt="🎤 音声入力", stop_prompt="⏹️ 停止", just_once=True, key='voice_input', use_container_width=True)
+        voice_text = speech_to_text(language='ja', start_prompt="🎤 音声", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
     if voice_text: st.session_state.search_val = voice_text
     with col_text:
-        search_query = st.text_input("キーワード検索", value=st.session_state.search_val, placeholder="料理名や材料を入力...", label_visibility="collapsed")
+        search_query = st.text_input("キーワード検索", value=st.session_state.search_val, placeholder="料理名や材料...", label_visibility="collapsed")
     if search_query != st.session_state.search_val: st.session_state.search_val = search_query
 
     if not df.empty:
@@ -163,7 +193,7 @@ elif mode == "🔍 レシピ検索":
             for store in str(stores).split("、"):
                 if store.strip(): all_stores.add(store.strip())
         store_options = ["すべて"] + sorted(list(all_stores))
-        selected_store = st.sidebar.selectbox("業態絞り込み", store_options)
+        selected_store = st.sidebar.selectbox("業態", store_options)
     else: selected_store = "すべて"
     
     if not df.empty and "category" in df.columns:
@@ -199,9 +229,15 @@ elif mode == "🔍 レシピ検索":
                     with st.container(border=True):
                         if row["image"] and str(row["image"]).startswith("http"):
                             st.image(row["image"], use_container_width=True)
-                        st.subheader(row["title"])
+                        
+                        # タイトルをボタンにする（クリックで全画面）
+                        if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
+                            show_recipe_modal(row, ingredient_dict)
+                        
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']}")
                         st.text(f"⏱ {row['time']}")
+
+                        # 詳細アコーディオン（ここを復活させました！）
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
@@ -225,15 +261,14 @@ elif mode == "🔍 レシピ検索":
                             st.write(row["steps"])
                             
                             st.divider()
-                            # フィードバック用のリンク生成
+                            # フィードバックリンク
                             store_enc = urllib.parse.quote(str(st.session_state.store_name))
                             recipe_enc = urllib.parse.quote(str(row['title']))
-                            # 新しいフォームのURLを使ってリンクを作成
                             fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
                             st.link_button("💬 このレシピへ意見を送る", fb_link)
 
 # --- 🎓 レシピ検定 ---
-elif mode == "🎓 レシピ検定":
+elif mode == "🎓 検定":
     st.title("🎓 レシピ検定")
     if not df.empty and len(df) >= 4:
         if 'quiz_state' not in st.session_state: st.session_state.quiz_state = "start"
@@ -248,7 +283,7 @@ elif mode == "🎓 レシピ検定":
         col1, col2 = st.columns([2, 1])
         with col2:
             st.write("")
-            if st.button("🔄 次の問題 / スタート", type="primary"):
+            if st.button("🔄 スタート", type="primary"):
                 generate_quiz()
                 st.rerun()
         if st.session_state.quiz_state == "answering" and st.session_state.current_quiz:
