@@ -10,7 +10,7 @@ if 'logged_in' not in st.session_state:
 
 if not st.session_state.logged_in:
     password = st.text_input("パスワードを入力してください", type="password")
-    if password == "5312":  # パスワード設定
+    if password == "5312":
         st.session_state.logged_in = True
         st.rerun()
     else:
@@ -20,21 +20,22 @@ if not st.session_state.logged_in:
 # --- データを読み込む機能 ---
 @st.cache_data(ttl=60)
 def load_data():
-    # ---------------------------------------------------------
-    # 👇 ここにURLを2つ貼ってください（貼り直し必須！）
-    # ---------------------------------------------------------
+    # ==========================================
+    # 👇 ここにURLを2つ貼ってください（必須！）
+    # ==========================================
     
     # 1. レシピのCSV URL
-    recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?output=csv"
+    recipe_csv = "https://docs.google.com/spreadsheets/d/1X7ORyihc-4p5DxOEZvYps26R7nVavdy_FeqBlD0z6tQ/edit?gid=0#gid=0"
     
     # 2. 食材マスタのCSV URL
-    ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?output=csv"
+    ingredient_csv = "https://docs.google.com/spreadsheets/d/1X7ORyihc-4p5DxOEZvYps26R7nVavdy_FeqBlD0z6tQ/edit?gid=805502789#gid=805502789"
     
-    # ---------------------------------------------------------
+    # ==========================================
 
     # ① レシピデータの読み込み
     try:
         df_recipe = pd.read_csv(recipe_csv)
+        # データの掃除（空白除去など）
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
         if "target_stores" not in df_recipe.columns:
             df_recipe["target_stores"] = "共通"
@@ -46,8 +47,15 @@ def load_data():
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
-        # 検索しやすいように辞書に変換
-        ing_dict = df_ing.set_index("商品名").to_dict(orient="index")
+        
+        # 検索用の辞書を作成（商品名がキー）
+        # ※ここでのポイント：検索ミスを防ぐため、文字列型にして前後の空白を削除
+        if "商品名" in df_ing.columns:
+            df_ing["商品名"] = df_ing["商品名"].astype(str).str.strip()
+            ing_dict = df_ing.set_index("商品名").to_dict(orient="index")
+        else:
+            ing_dict = {}
+            
     except Exception:
         ing_dict = {}
 
@@ -133,26 +141,25 @@ if not df.empty:
                         ingredients_list = row["ingredients"]
                         
                         for ingredient_name in ingredients_list:
-                            ingredient_name = ingredient_name.strip()
+                            ingredient_name = str(ingredient_name).strip() # 空白削除
                             
-                            # --- 変更点：あいまい検索ロジック ---
+                            # --- あいまい検索ロジック ---
                             matched_info = None
                             
-                            # 1. まず完全一致を探す
+                            # 1. 完全一致
                             if ingredient_name in ingredient_dict:
                                 matched_info = ingredient_dict[ingredient_name]
                             else:
-                                # 2. なければ部分一致を探す（「マスタ名」の中に「レシピの材料名」が含まれているか？）
+                                # 2. 部分一致（マスタ名の中にレシピ材料名が含まれるか）
                                 for master_name, info in ingredient_dict.items():
-                                    # 例: レシピ「玉ねぎ」 in マスタ「北海道産玉ねぎ」
                                     if ingredient_name in master_name:
                                         matched_info = info
-                                        break # 1つ見つかったら終了
-                            # ------------------------------------
+                                        break
+                            # -------------------------
 
                             if matched_info:
                                 with st.popover(f"ℹ️ {ingredient_name}"):
-                                    st.markdown(f"### {ingredient_name}")
+                                    st.markdown(f"### {matched_info.get('商品名', ingredient_name)}")
                                     st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
                                     
                                     st.markdown("#### 📦 管理情報")
@@ -175,5 +182,33 @@ if not df.empty:
                         st.markdown("---")
                         st.markdown("**📝 作り方**")
                         st.write(row["steps"])
+
+    # --- 🔧 診断ツール（ここから下が表示されない原因を探るツールです） ---
+    st.divider()
+    with st.expander("🔧 管理者用：データ診断モード"):
+        st.write("### 1. 食材マスタの状態")
+        if ingredient_dict:
+            st.success(f"✅ 読み込み成功！ {len(ingredient_dict)} 件の食材があります。")
+            st.write("▼ 読み込んだデータの一部")
+            st.dataframe(pd.DataFrame.from_dict(ingredient_dict, orient='index').head(5))
+        else:
+            st.error("❌ 食材マスタが読み込めませんでした。URLを確認してください。")
+
+        st.write("### 2. マッチング テスト")
+        test_word = st.text_input("レシピ側の材料名を入力してテスト", placeholder="例: 玉ねぎ")
+        if test_word:
+            found = False
+            if test_word in ingredient_dict:
+                st.success(f"✅ 完全一致でヒット！: {test_word}")
+                found = True
+            else:
+                for master_name in ingredient_dict.keys():
+                    if test_word in master_name:
+                        st.info(f"🆗 部分一致でヒット！: {test_word} ⊂ {master_name}")
+                        found = True
+                        break
+            if not found:
+                st.error(f"⚠️ ヒットしませんでした。マスタにある名前: {list(ingredient_dict.keys())[:5]}...")
+
 else:
-    st.error("データの読み込みに失敗しました。2つのURLが正しいか確認してください。")
+    st.error("データの読み込みに失敗しました。URLを確認してください。")
