@@ -72,10 +72,99 @@ def load_data():
 df, ingredient_dict, df_news, df_stores = load_data()
 
 
+# --- 印刷用HTML生成関数 ---
+def generate_print_html(row, ing_dict):
+    # 材料リストのHTML作成
+    ing_html = ""
+    for ing in row["ingredients"]:
+        ing = str(ing).strip()
+        detail = ""
+        # 食材マスタに詳細があれば追記
+        if ing in ing_dict:
+            info = ing_dict[ing]
+            detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
+        elif any(ing in k for k in ing_dict):
+             for k, info in ing_dict.items():
+                 if ing in k:
+                     detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
+                     break
+        ing_html += f"<li><b>{ing}</b>{detail}</li>"
+
+    # 作り方の改行をHTMLの<br>に変換
+    steps_html = str(row["steps"]).replace("\n", "<br>")
+
+    # HTMLテンプレート（ボタン類は一切含まない純粋なレシピデータのみ）
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{row['title']}</title>
+        <style>
+            body {{ font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; padding: 40px; color: #333; }}
+            h1 {{ border-bottom: 3px solid #ff4b4b; padding-bottom: 10px; margin-bottom: 5px; }}
+            .meta {{ color: #666; margin-bottom: 20px; font-size: 0.9em; }}
+            .container {{ display: flex; gap: 30px; margin-bottom: 30px; }}
+            .image-box {{ flex: 1; text-align: center; }}
+            .image-box img {{ max-width: 100%; max-height: 350px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }}
+            .ing-box {{ flex: 1; background: #f9f9f9; padding: 20px; border-radius: 8px; }}
+            h2 {{ background: #eee; padding: 5px 10px; border-left: 5px solid #ff4b4b; font-size: 1.2em; }}
+            ul {{ padding-left: 20px; line-height: 1.6; }}
+            .steps-box {{ line-height: 1.8; font-size: 1.05em; }}
+            @media print {{
+                body {{ padding: 0; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>{row['title']}</h1>
+        <div class="meta">
+            🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}
+        </div>
+
+        <div class="container">
+            <div class="image-box">
+                <img src="{row['image']}" alt="料理画像">
+            </div>
+            <div class="ing-box">
+                <h2>🛒 材料・規格</h2>
+                <ul>{ing_html}</ul>
+            </div>
+        </div>
+
+        <div class="steps-box">
+            <h2>📝 調理手順</h2>
+            <div>{steps_html}</div>
+        </div>
+        
+        <script>
+            window.onload = function() {{ window.print(); }}
+        </script>
+    </body>
+    </html>
+    """
+    return html
+
+
 # --- 全画面表示用ダイアログ ---
 @st.dialog("レシピ詳細", width="large")
 def show_recipe_modal(row, ing_dict):
-    st.header(row["title"])
+    # タイトルと印刷ボタンを並べるためのカラム作成
+    col_header, col_print = st.columns([8, 1])
+    
+    with col_header:
+        st.header(row["title"])
+    
+    with col_print:
+        # ★ここを変更：ボタンをアイコンのみにしました★
+        html_data = generate_print_html(row, ing_dict)
+        st.download_button(
+            label="🖨️",
+            data=html_data,
+            file_name=f"{row['title']}.html",
+            mime="text/html",
+            help="印刷用ファイルをダウンロード"
+        )
     
     if row["image"] and str(row["image"]).startswith("http"):
         st.image(row["image"], use_container_width=True)
@@ -109,6 +198,7 @@ def show_recipe_modal(row, ing_dict):
         st.write(row["steps"])
 
     st.divider()
+    # 意見ボタン（ここは画面用なので残りますが、印刷物には含まれません）
     store_enc = urllib.parse.quote(str(st.session_state.store_name))
     recipe_enc = urllib.parse.quote(str(row['title']))
     fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
@@ -230,14 +320,14 @@ elif mode == "🔍 レシピ検索":
                         if row["image"] and str(row["image"]).startswith("http"):
                             st.image(row["image"], use_container_width=True)
                         
-                        # タイトルをボタンにする（クリックで全画面）
+                        # タイトルボタン（全画面呼び出し）
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']}")
                         st.text(f"⏱ {row['time']}")
 
-                        # 詳細アコーディオン（ここを復活させました！）
+                        # 詳細アコーディオン
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
