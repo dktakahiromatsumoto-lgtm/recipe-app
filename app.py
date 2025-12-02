@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import random # クイズ用にランダム機能を追加
+import random
 
 # ページ設定
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
@@ -33,12 +33,26 @@ def load_data():
     
     # ==========================================
 
+    # ★ GoogleドライブのURLを画像用に変換する魔法の関数
+    def convert_google_drive_url(url):
+        url = str(url).strip()
+        if "drive.google.com" in url and "/d/" in url:
+            # ID部分を抜き出して、直リンク形式に書き換える
+            file_id = url.split("/d/")[1].split("/")[0]
+            return f"https://drive.google.com/uc?export=view&id={file_id}"
+        return url
+
     # ① レシピデータの読み込み
     try:
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
         if "target_stores" not in df_recipe.columns:
             df_recipe["target_stores"] = "共通"
+        
+        # GoogleドライブのURLがあれば変換する
+        if "image" in df_recipe.columns:
+            df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
+
         df_recipe = df_recipe.fillna("")
     except Exception:
         df_recipe = pd.DataFrame()
@@ -63,17 +77,13 @@ df, ingredient_dict = load_data()
 # 📱 サイドバー（モード選択・フィルター）
 # ==========================================
 st.sidebar.title("🍳 Menu")
-
-# モード切替
 mode = st.sidebar.radio("モード選択", ["🔍 レシピ検索", "🎓 レシピ検定"])
-
 st.sidebar.divider()
 
 # --- モード1：レシピ検索 ---
 if mode == "🔍 レシピ検索":
     st.sidebar.subheader("絞り込み設定")
 
-    # 1. 業態切り替え
     if not df.empty:
         all_stores = set()
         for stores in df["target_stores"]:
@@ -85,21 +95,17 @@ if mode == "🔍 レシピ検索":
     else:
         selected_store = "すべて"
 
-    # 2. キーワード検索
     search_query = st.sidebar.text_input("キーワード検索", placeholder="例: ポテト, 鶏肉...")
 
-    # 3. カテゴリフィルター
     if not df.empty and "category" in df.columns:
         categories = ["すべて"] + list(df["category"].unique())
         selected_category = st.sidebar.selectbox("カテゴリで絞り込み", categories)
     else:
         selected_category = "すべて"
 
-    # --- メイン画面（検索結果） ---
     if not df.empty:
         filtered_df = df.copy()
 
-        # フィルタリング実行
         if selected_store != "すべて":
             filtered_df = filtered_df[filtered_df["target_stores"].astype(str).apply(lambda x: selected_store in x)]
         if search_query:
@@ -121,6 +127,7 @@ if mode == "🔍 レシピ検索":
                 col = cols[index % 3]
                 with col:
                     with st.container(border=True):
+                        # 画像表示（Googleドライブ対応）
                         if row["image"] and str(row["image"]).startswith("http"):
                             st.image(row["image"], use_container_width=True)
                         
@@ -130,7 +137,6 @@ if mode == "🔍 レシピ検索":
                         
                         with st.expander("詳細を見る"):
                             st.markdown("**🛒 材料**")
-                            # 食材詳細ボタンロジック
                             ingredients_list = row["ingredients"]
                             for ingredient_name in ingredients_list:
                                 ingredient_name = str(ingredient_name).strip()
@@ -168,25 +174,16 @@ elif mode == "🎓 レシピ検定":
     elif len(df) < 4:
         st.warning("クイズをするには、少なくとも4つ以上のレシピが必要です。")
     else:
-        # セッション状態の初期化（クイズの問題を保持するため）
         if 'quiz_state' not in st.session_state:
-            st.session_state.quiz_state = "start" # start, answering, result
+            st.session_state.quiz_state = "start"
         if 'current_quiz' not in st.session_state:
             st.session_state.current_quiz = None
 
-        # --- クイズ出題関数 ---
         def generate_quiz():
-            # 正解のレシピをランダムに1つ選ぶ
             correct_row = df.sample(1).iloc[0]
-            
-            # 間違いの選択肢を3つ選ぶ（正解以外から）
             wrong_titles = df[df["title"] != correct_row["title"]]["title"].sample(3).tolist()
-            
-            # 選択肢リストを作成（正解1 + 間違い3）
             options = wrong_titles + [correct_row["title"]]
-            random.shuffle(options) # シャッフルする
-            
-            # データを保存
+            random.shuffle(options)
             st.session_state.current_quiz = {
                 "data": correct_row,
                 "options": options,
@@ -194,11 +191,9 @@ elif mode == "🎓 レシピ検定":
             }
             st.session_state.quiz_state = "answering"
 
-        # --- 画面表示 ---
         col1, col2 = st.columns([2, 1])
-        
         with col2:
-            st.write("") # スペース調整
+            st.write("")
             if st.button("🔄 次の問題へ / スタート", type="primary", use_container_width=True):
                 generate_quiz()
                 st.rerun()
@@ -206,30 +201,23 @@ elif mode == "🎓 レシピ検定":
         if st.session_state.quiz_state == "answering" and st.session_state.current_quiz:
             q = st.session_state.current_quiz
             row = q["data"]
-
             with col1:
                 st.markdown("### Q. この料理の名前は？")
-                
-                # 画像があれば画像を表示、なければ材料を表示
                 if row["image"] and str(row["image"]).startswith("http"):
                     st.image(row["image"], width=400)
                 else:
                     st.info("📷 画像がありません")
                     st.markdown("**ヒント：使われている材料**")
                     st.write(" / ".join(row["ingredients"]))
-
-                # 回答フォーム
+                
                 st.write("")
                 user_answer = st.radio("正解を選んでください:", q["options"], key="quiz_radio")
                 
                 if st.button("回答する"):
                     if user_answer == q["correct_answer"]:
-                        st.balloons() # 風船を飛ばす！
+                        st.balloons()
                         st.success(f"🎉 正解！これは「{q['correct_answer']}」です！")
-                        st.image("https://media.giphy.com/media/26tOZ42Mg6pbTUPfi/giphy.gif", width=200) # お祝いGIF
                     else:
                         st.error(f"残念... 😢 正解は「{q['correct_answer']}」でした。")
-                        st.info(f"あなたの回答: {user_answer}")
-
         elif st.session_state.quiz_state == "start":
             st.info("右上の「スタート」ボタンを押して検定を開始してください！")
