@@ -25,7 +25,7 @@ def load_data():
 @st.cache_data(ttl=60) # 60秒ごとにデータを更新する設定
 def load_data():
     # ↓下の " " の中に、スプレッドシートで発行したCSVのURLを貼り付けてください！
-    csv_url = "ここにhttps://...から始まるCSVのURLを貼り付け"
+    csv_url = "https://docs.google.com/spreadsheets/d/1X7ORyihc-4p5DxOEZvYps26R7nVavdy_FeqBlD0z6tQ/edit?gid=0#gid=0"
 
     try:
         df = pd.read_csv(csv_url)
