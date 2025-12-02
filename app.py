@@ -25,10 +25,10 @@ def load_data():
     # ==========================================
     
     # 1. レシピのCSV URL
-    recipe_csv = "https://docs.google.com/spreadsheets/d/1X7ORyihc-4p5DxOEZvYps26R7nVavdy_FeqBlD0z6tQ/edit?gid=0#gid=0"
+    recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=0&single=true&output=csv"
     
     # 2. 食材マスタのCSV URL
-    ingredient_csv = "https://docs.google.com/spreadsheets/d/1X7ORyihc-4p5DxOEZvYps26R7nVavdy_FeqBlD0z6tQ/edit?gid=805502789#gid=805502789"
+    ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=805502789&single=true&output=csv"
     
     # ==========================================
 
