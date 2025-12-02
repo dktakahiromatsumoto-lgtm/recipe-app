@@ -7,7 +7,7 @@ import urllib.parse # URL作成用
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
 
 # ==========================================
-# 👇 設定エリア：URLなどをここにまとめて貼る
+# 👇 設定エリア：URL設定完了済み
 # ==========================================
 
 # 1. レシピのCSV
@@ -16,18 +16,13 @@ recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8
 # 2. 食材マスタのCSV
 ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=805502789&single=true&output=csv"
 
-# 3. お知らせのCSV（★新しく作ったnewsシートのURL）
+# 3. お知らせのCSV（★いただきました！）
 news_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=1725848377&single=true&output=csv"
 
-# 4. Googleフォームの「事前入力リンク」のベースURL（★ステップ2で作ったもの）
-# 例: https://docs.google.com/forms/d/e/xxxxx/viewform?usp=pp_url&entry.1111=
-# （&entry... の手前までを貼ってください）
+# 4. Googleフォーム設定
 form_base_url = "https://docs.google.com/forms/d/e/1FAIpQLSeLSyph6KJ3aPPgdCCxKuZ2tRLCZI13ftsM3-godUqzB1hOyg/viewform?usp=pp_url"
-
-# 5. Googleフォームの項目のID（entry.xxxx の数字部分）
-# 事前入力リンクを見て、それぞれの質問に対応する数字を入れてください
-entry_id_store = "entry.1108417758"  # 店舗名のID
-entry_id_title = "entry.1493447951"  # 記事タイトルのID
+entry_id_store = "entry.1108417758"  # 店舗名
+entry_id_title = "entry.1493447951"  # 記事名
 
 # ==========================================
 
@@ -39,14 +34,14 @@ if 'logged_in' not in st.session_state:
 if not st.session_state.logged_in:
     st.markdown("### 🔑 Login")
     
-    # 店舗選択（ここは後でスプレッドシート管理にしてもOK）
-    store_list = ["本部", "新宿東口店", "渋谷店", "池袋店", "銀座店", "B-GARAGE渋谷"]
+    # 店舗リスト
+    store_list = ["本部", "新宿東口店", "渋谷店", "池袋店", "銀座店", "B-GARAGE渋谷", "カラオケマック"]
     selected_store = st.selectbox("店舗を選択してください", store_list)
     
     password = st.text_input("パスワード", type="password")
     
     if st.button("ログイン"):
-        if password == "secret123":
+        if password == "5312":
             st.session_state.logged_in = True
             st.session_state.store_name = selected_store
             st.rerun()
@@ -92,7 +87,7 @@ def load_data():
     except:
         ing_dict = {}
 
-    # ③ お知らせ（★追加）
+    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
@@ -119,44 +114,45 @@ if mode == "🏠 ホーム(お知らせ)":
     else:
         # 日付が新しい順に並び替え
         if "date" in df_news.columns:
-            df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce')
-            df_news = df_news.sort_values("date", ascending=False)
+            try:
+                df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce')
+                df_news = df_news.sort_values("date", ascending=False)
+            except:
+                pass
 
         for index, row in df_news.iterrows():
-            # 重要フラグのチェック
             is_important = str(row.get("important", "")).upper() == "TRUE"
             
-            # デザイン作成
             with st.container(border=True):
                 col1, col2 = st.columns([0.8, 0.2])
                 with col1:
+                    title_text = row.get('title', '無題')
                     if is_important:
-                        st.markdown(f"### 🔴 {row['title']}")
+                        st.markdown(f"### 🔴 {title_text}")
                     else:
-                        st.markdown(f"### {row['title']}")
+                        st.markdown(f"### {title_text}")
                     
-                    date_str = row['date'].strftime('%Y/%m/%d') if pd.notnull(row['date']) else ""
-                    st.caption(f"📅 {date_str}")
-                    st.write(row['content'])
+                    if "date" in row and pd.notnull(row['date']):
+                        try:
+                             st.caption(f"📅 {row['date'].strftime('%Y/%m/%d')}")
+                        except:
+                             st.caption(f"📅 {row.get('date', '')}")
+                    
+                    st.write(row.get('content', ''))
                 
                 with col2:
-                    st.write("") # 隙間調整
+                    st.write("") 
                     # Googleフォームへのリンクを作成
-                    # 店舗名とタイトルをURLエンコード（文字化け防止）して埋め込む
-                    store_encoded = urllib.parse.quote(st.session_state.store_name)
-                    title_encoded = urllib.parse.quote(row['title'])
-                    
-                    # リンク生成
-                    # 例: form_url & entry.123=新宿店 & entry.456=タイトル
+                    store_encoded = urllib.parse.quote(str(st.session_state.store_name))
+                    title_encoded = urllib.parse.quote(str(row.get('title', '')))
                     link = f"{form_base_url}&{entry_id_store}={store_encoded}&{entry_id_title}={title_encoded}"
                     
                     st.link_button("✅ 既読報告", link)
 
 # ==========================================
-# 🔍 モード：レシピ検索（既存機能）
+# 🔍 モード：レシピ検索
 # ==========================================
 elif mode == "🔍 レシピ検索":
-    # (中略：以前と同じコードですが、store_nameを使ったフィルタリングなどが可能)
     st.title("🔍 Recipe Search")
     
     # サイドバー設定
@@ -210,7 +206,6 @@ elif mode == "🔍 レシピ検索":
                         
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
-                            # 食材詳細ロジック
                             ingredients_list = row["ingredients"]
                             for ingredient_name in ingredients_list:
                                 ingredient_name = str(ingredient_name).strip()
@@ -228,6 +223,7 @@ elif mode == "🔍 レシピ検索":
                                         st.caption(f"コード: {matched_info.get('商品コード', '-')}")
                                         st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
                                         st.markdown(f"**保管温度**: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
+                                        st.markdown(f"**備考**: {matched_info.get('備考', '-')}")
                                 else:
                                     st.write(f"・ {ingredient_name}")
                             st.markdown("---")
@@ -235,11 +231,10 @@ elif mode == "🔍 レシピ検索":
                             st.write(row["steps"])
 
 # ==========================================
-# 🎓 モード：レシピ検定（既存機能）
+# 🎓 モード：レシピ検定
 # ==========================================
 elif mode == "🎓 レシピ検定":
     st.title("🎓 レシピ検定")
-    # (以前のクイズコードをそのまま使用)
     if not df.empty and len(df) >= 4:
         if 'quiz_state' not in st.session_state:
             st.session_state.quiz_state = "start"
@@ -282,4 +277,4 @@ elif mode == "🎓 レシピ検定":
                     else:
                         st.error(f"残念... 正解は「{q['correct_answer']}」")
     else:
-        st.warning("データ不足")
+        st.warning("データ不足: クイズを行うにはレシピが4つ以上必要です")
