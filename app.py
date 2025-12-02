@@ -9,7 +9,7 @@ from streamlit_mic_recorder import speech_to_text
 # ★ここを変更：page_icon に画像をセットしました！
 st.set_page_config(
     page_title="Recipe Viewer", 
-    page_icon="img/favicon.png", 
+    page_icon="img/favicon.ico", 
     layout="wide"
 )
 
