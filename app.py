@@ -10,7 +10,7 @@ if 'logged_in' not in st.session_state:
 
 if not st.session_state.logged_in:
     password = st.text_input("パスワードを入力してください", type="password")
-    if password == "secret123":  # パスワード設定
+    if password == "5312":  # パスワード設定
         st.session_state.logged_in = True
         st.rerun()
     else:
