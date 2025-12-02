@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 import random
-import urllib.parse # URL作成用
+import urllib.parse
 
 # ページ設定
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
 
 # ==========================================
-# 👇 設定エリア：URL設定完了済み
+# 👇 設定エリア：全てのURL設定完了済み！
 # ==========================================
 
 # 1. レシピのCSV
@@ -16,43 +16,22 @@ recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8
 # 2. 食材マスタのCSV
 ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=805502789&single=true&output=csv"
 
-# 3. お知らせのCSV（★いただきました！）
+# 3. お知らせのCSV
 news_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=1725848377&single=true&output=csv"
 
-# 4. Googleフォーム設定
+# 4. 店舗マスタのCSV（★今回いただきました！）
+store_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?output=csv"
+
+# 5. Googleフォーム設定
 form_base_url = "https://docs.google.com/forms/d/e/1FAIpQLSeLSyph6KJ3aPPgdCCxKuZ2tRLCZI13ftsM3-godUqzB1hOyg/viewform?usp=pp_url"
-entry_id_store = "entry.1108417758"  # 店舗名
-entry_id_title = "entry.1493447951"  # 記事名
+entry_id_store = "entry.1108417758"
+entry_id_title = "entry.1493447951"
 
 # ==========================================
 
-# --- ログイン・店舗選択機能 ---
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.store_name = ""
-
-if not st.session_state.logged_in:
-    st.markdown("### 🔑 Login")
-    
-    # 店舗リスト
-    store_list = ["本部", "新宿東口店", "渋谷店", "池袋店", "銀座店", "B-GARAGE渋谷", "カラオケマック"]
-    selected_store = st.selectbox("店舗を選択してください", store_list)
-    
-    password = st.text_input("パスワード", type="password")
-    
-    if st.button("ログイン"):
-        if password == "5312":
-            st.session_state.logged_in = True
-            st.session_state.store_name = selected_store
-            st.rerun()
-        else:
-            st.error("パスワードが違います")
-    st.stop()
-
-# --- データ読み込み ---
+# --- データ読み込み関数 ---
 @st.cache_data(ttl=60)
 def load_data():
-    # 魔法の画像変換関数
     def convert_google_drive_url(url):
         url = str(url).strip()
         if "drive.google.com" in url and "/d/" in url:
@@ -94,25 +73,80 @@ def load_data():
     except:
         df_news = pd.DataFrame()
 
-    return df_recipe, ing_dict, df_news
+    # ④ 店舗マスタ
+    try:
+        df_stores = pd.read_csv(store_csv, dtype=str) # コードを文字列として読み込む
+        df_stores = df_stores.fillna("")
+        # 空白除去
+        if "store_code" in df_stores.columns:
+            df_stores["store_code"] = df_stores["store_code"].str.strip()
+        if "password" in df_stores.columns:
+            df_stores["password"] = df_stores["password"].str.strip()
+    except:
+        df_stores = pd.DataFrame()
 
-df, ingredient_dict, df_news = load_data()
+    return df_recipe, ing_dict, df_news, df_stores
+
+# データをロード
+df, ingredient_dict, df_news, df_stores = load_data()
+
+
+# --- ログイン機能（スプレッドシート照合版） ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.store_name = ""
+
+if not st.session_state.logged_in:
+    st.markdown("### 🔑 Login")
+    st.caption("店舗コードとパスワードを入力してください")
+    
+    # 入力フォーム
+    input_code = st.text_input("店舗コード")
+    input_password = st.text_input("パスワード", type="password")
+    
+    if st.button("ログイン"):
+        # 店舗マスタと照合
+        if not df_stores.empty:
+            # 入力されたコードとパスワードが一致する行を探す
+            match = df_stores[
+                (df_stores["store_code"] == input_code) & 
+                (df_stores["password"] == input_password)
+            ]
+            
+            if not match.empty:
+                # ログイン成功！
+                store_name = match.iloc[0]["store_name"]
+                st.session_state.logged_in = True
+                st.session_state.store_name = store_name
+                st.rerun()
+            else:
+                st.error("店舗コードまたはパスワードが違います")
+        else:
+            # マスタが読み込めない場合（緊急用バックアップ）
+            if input_password == "5312":
+                 st.session_state.logged_in = True
+                 st.session_state.store_name = "管理者(緊急ログイン)"
+                 st.rerun()
+            else:
+                 st.error("ログインできませんでした。店舗マスタの設定を確認してください。")
+            
+    st.stop() # ログインしていない場合はここで止める
+
+# ==========================================
+# これより下はログイン後の画面
+# ==========================================
 
 # --- レイアウト開始 ---
 st.sidebar.title(f"👤 {st.session_state.store_name}")
 mode = st.sidebar.radio("メニュー", ["🏠 ホーム(お知らせ)", "🔍 レシピ検索", "🎓 レシピ検定"])
 st.sidebar.divider()
 
-# ==========================================
-# 🏠 モード：ホーム（お知らせ機能）
-# ==========================================
+# --- 🏠 ホーム(お知らせ) ---
 if mode == "🏠 ホーム(お知らせ)":
     st.title("📢 本部からのお知らせ")
-    
     if df_news.empty:
         st.info("現在、お知らせはありません。")
     else:
-        # 日付が新しい順に並び替え
         if "date" in df_news.columns:
             try:
                 df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce')
@@ -122,7 +156,6 @@ if mode == "🏠 ホーム(お知らせ)":
 
         for index, row in df_news.iterrows():
             is_important = str(row.get("important", "")).upper() == "TRUE"
-            
             with st.container(border=True):
                 col1, col2 = st.columns([0.8, 0.2])
                 with col1:
@@ -131,31 +164,24 @@ if mode == "🏠 ホーム(お知らせ)":
                         st.markdown(f"### 🔴 {title_text}")
                     else:
                         st.markdown(f"### {title_text}")
-                    
                     if "date" in row and pd.notnull(row['date']):
                         try:
                              st.caption(f"📅 {row['date'].strftime('%Y/%m/%d')}")
                         except:
                              st.caption(f"📅 {row.get('date', '')}")
-                    
                     st.write(row.get('content', ''))
-                
                 with col2:
                     st.write("") 
-                    # Googleフォームへのリンクを作成
                     store_encoded = urllib.parse.quote(str(st.session_state.store_name))
                     title_encoded = urllib.parse.quote(str(row.get('title', '')))
                     link = f"{form_base_url}&{entry_id_store}={store_encoded}&{entry_id_title}={title_encoded}"
-                    
                     st.link_button("✅ 既読報告", link)
 
-# ==========================================
-# 🔍 モード：レシピ検索
-# ==========================================
+# --- 🔍 レシピ検索 ---
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
     
-    # サイドバー設定
+    # サイドバー設定（target_storesから自動生成）
     if not df.empty:
         all_stores = set()
         for stores in df["target_stores"]:
@@ -230,9 +256,7 @@ elif mode == "🔍 レシピ検索":
                             st.markdown("**📝 作り方**")
                             st.write(row["steps"])
 
-# ==========================================
-# 🎓 モード：レシピ検定
-# ==========================================
+# --- 🎓 レシピ検定 ---
 elif mode == "🎓 レシピ検定":
     st.title("🎓 レシピ検定")
     if not df.empty and len(df) >= 4:
