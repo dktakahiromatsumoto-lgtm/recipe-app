@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
-from rapidfuzz import fuzz # 👈 これがあいまい検索の頭脳です
+from rapidfuzz import fuzz
+from streamlit_mic_recorder import speech_to_text # 👈 音声入力用のライブラリ
 
 # ページ設定
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
@@ -110,7 +111,7 @@ if not st.session_state.logged_in:
             else:
                 st.error("店舗コードまたはパスワードが違います")
         else:
-            if input_password == "5312":
+            if input_password == "secret123":
                  st.session_state.logged_in = True
                  st.session_state.store_name = "管理者(緊急)"
                  st.rerun()
@@ -153,11 +154,11 @@ if mode == "🏠 ホーム(お知らせ)":
                     link = f"{form_base_url}&{entry_id_store}={store_encoded}&{entry_id_title}={title_encoded}"
                     st.link_button("✅ 既読", link)
 
-# --- 🔍 レシピ検索（ファジー検索対応版） ---
+# --- 🔍 レシピ検索（音声ボタン＆ファジー検索） ---
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
-    st.caption("🗣️ 音声入力対応：キーボードのマイクボタンを押して話しかけてください")
     
+    # サイドバー：業態フィルタ
     if not df.empty:
         all_stores = set()
         for stores in df["target_stores"]:
@@ -166,9 +167,28 @@ elif mode == "🔍 レシピ検索":
         store_options = ["すべて"] + sorted(list(all_stores))
         selected_store = st.sidebar.selectbox("業態絞り込み", store_options)
     else: selected_store = "すべて"
-        
-    search_query = st.sidebar.text_input("キーワード (音声入力OK)", placeholder="例: ハンバーグ、鶏肉...")
     
+    # サイドバー：音声入力ボタン
+    st.sidebar.write("🎤 音声で入力")
+    # 音声入力を受け取る（日本語設定）
+    voice_text = speech_to_text(language='ja', start_prompt="録音開始", stop_prompt="録音終了", just_once=True, key='voice_input')
+    
+    # 検索ワードの決定（音声があればそれを、なければ入力欄を使う）
+    # セッションステートを使って値を同期させる
+    if 'search_val' not in st.session_state:
+        st.session_state.search_val = ""
+
+    if voice_text:
+        st.session_state.search_val = voice_text
+    
+    # テキスト入力欄（音声が入るとここも自動で書き換わる）
+    search_query = st.sidebar.text_input("キーワード", value=st.session_state.search_val, placeholder="例: ハンバーグ...")
+    
+    # もし手入力で書き換えた場合も同期
+    if search_query != st.session_state.search_val:
+         st.session_state.search_val = search_query
+
+    # カテゴリフィルタ
     if not df.empty and "category" in df.columns:
         categories = ["すべて"] + list(df["category"].unique())
         selected_category = st.sidebar.selectbox("カテゴリ", categories)
@@ -188,25 +208,14 @@ elif mode == "🔍 レシピ検索":
 
         # 3. キーワード検索（ファジー検索）
         if search_query:
-            # 検索用のスコア計算関数
             def get_fuzzy_score(row):
-                # タイトルとの類似度
                 title_score = fuzz.partial_ratio(search_query.lower(), str(row['title']).lower())
-                
-                # 材料との類似度（リストを文字列にして検索）
                 ingredients_str = " ".join(row['ingredients'])
                 ing_score = fuzz.partial_ratio(search_query.lower(), ingredients_str.lower())
-                
-                # どちらか高い方を採用
                 return max(title_score, ing_score)
 
-            # スコアを計算して列に追加
             filtered_df['match_score'] = filtered_df.apply(get_fuzzy_score, axis=1)
-            
-            # スコアが50点以上のものだけ残す（この数字を下げるともっと緩くなります）
             filtered_df = filtered_df[filtered_df['match_score'] > 50]
-            
-            # スコアが高い順に並び替え
             filtered_df = filtered_df.sort_values('match_score', ascending=False)
 
         st.write(f"検索結果: {len(filtered_df)} 件")
