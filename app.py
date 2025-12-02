@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
+from rapidfuzz import fuzz # 👈 これがあいまい検索の頭脳です
 
 # ページ設定
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
 
 # ==========================================
-# 👇 設定エリア：全てのURL設定完了済み！
+# 👇 設定エリア：URL設定
 # ==========================================
 
 # 1. レシピのCSV
@@ -19,7 +20,7 @@ ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRC
 # 3. お知らせのCSV
 news_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=1725848377&single=true&output=csv"
 
-# 4. 店舗マスタのCSV（★今回いただきました！）
+# 4. 店舗マスタのCSV
 store_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=285648220&single=true&output=csv"
 
 # 5. Googleフォーム設定
@@ -75,9 +76,8 @@ def load_data():
 
     # ④ 店舗マスタ
     try:
-        df_stores = pd.read_csv(store_csv, dtype=str) # コードを文字列として読み込む
+        df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
-        # 空白除去
         if "store_code" in df_stores.columns:
             df_stores["store_code"] = df_stores["store_code"].str.strip()
         if "password" in df_stores.columns:
@@ -87,11 +87,10 @@ def load_data():
 
     return df_recipe, ing_dict, df_news, df_stores
 
-# データをロード
 df, ingredient_dict, df_news, df_stores = load_data()
 
 
-# --- ログイン機能（スプレッドシート照合版） ---
+# --- ログイン機能 ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.store_name = ""
@@ -99,49 +98,32 @@ if 'logged_in' not in st.session_state:
 if not st.session_state.logged_in:
     st.markdown("### 🔑 Login")
     st.caption("店舗コードとパスワードを入力してください")
-    
-    # 入力フォーム
     input_code = st.text_input("店舗コード")
     input_password = st.text_input("パスワード", type="password")
-    
     if st.button("ログイン"):
-        # 店舗マスタと照合
         if not df_stores.empty:
-            # 入力されたコードとパスワードが一致する行を探す
-            match = df_stores[
-                (df_stores["store_code"] == input_code) & 
-                (df_stores["password"] == input_password)
-            ]
-            
+            match = df_stores[(df_stores["store_code"] == input_code) & (df_stores["password"] == input_password)]
             if not match.empty:
-                # ログイン成功！
-                store_name = match.iloc[0]["store_name"]
                 st.session_state.logged_in = True
-                st.session_state.store_name = store_name
+                st.session_state.store_name = match.iloc[0]["store_name"]
                 st.rerun()
             else:
                 st.error("店舗コードまたはパスワードが違います")
         else:
-            # マスタが読み込めない場合（緊急用バックアップ）
             if input_password == "5312":
                  st.session_state.logged_in = True
-                 st.session_state.store_name = "管理者(緊急ログイン)"
+                 st.session_state.store_name = "管理者(緊急)"
                  st.rerun()
             else:
-                 st.error("ログインできませんでした。店舗マスタの設定を確認してください。")
-            
-    st.stop() # ログインしていない場合はここで止める
+                 st.error("ログインできません")
+    st.stop()
 
-# ==========================================
-# これより下はログイン後の画面
-# ==========================================
-
-# --- レイアウト開始 ---
+# --- レイアウト ---
 st.sidebar.title(f"👤 {st.session_state.store_name}")
 mode = st.sidebar.radio("メニュー", ["🏠 ホーム(お知らせ)", "🔍 レシピ検索", "🎓 レシピ検定"])
 st.sidebar.divider()
 
-# --- 🏠 ホーム(お知らせ) ---
+# --- 🏠 ホーム ---
 if mode == "🏠 ホーム(お知らせ)":
     st.title("📢 本部からのお知らせ")
     if df_news.empty:
@@ -151,68 +133,81 @@ if mode == "🏠 ホーム(お知らせ)":
             try:
                 df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce')
                 df_news = df_news.sort_values("date", ascending=False)
-            except:
-                pass
-
+            except: pass
         for index, row in df_news.iterrows():
             is_important = str(row.get("important", "")).upper() == "TRUE"
             with st.container(border=True):
                 col1, col2 = st.columns([0.8, 0.2])
                 with col1:
                     title_text = row.get('title', '無題')
-                    if is_important:
-                        st.markdown(f"### 🔴 {title_text}")
-                    else:
-                        st.markdown(f"### {title_text}")
+                    if is_important: st.markdown(f"### 🔴 {title_text}")
+                    else: st.markdown(f"### {title_text}")
                     if "date" in row and pd.notnull(row['date']):
-                        try:
-                             st.caption(f"📅 {row['date'].strftime('%Y/%m/%d')}")
-                        except:
-                             st.caption(f"📅 {row.get('date', '')}")
+                        try: st.caption(f"📅 {row['date'].strftime('%Y/%m/%d')}")
+                        except: st.caption(f"📅 {row.get('date', '')}")
                     st.write(row.get('content', ''))
                 with col2:
                     st.write("") 
                     store_encoded = urllib.parse.quote(str(st.session_state.store_name))
                     title_encoded = urllib.parse.quote(str(row.get('title', '')))
                     link = f"{form_base_url}&{entry_id_store}={store_encoded}&{entry_id_title}={title_encoded}"
-                    st.link_button("✅ 既読報告", link)
+                    st.link_button("✅ 既読", link)
 
-# --- 🔍 レシピ検索 ---
+# --- 🔍 レシピ検索（ファジー検索対応版） ---
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
+    st.caption("🗣️ 音声入力対応：キーボードのマイクボタンを押して話しかけてください")
     
-    # サイドバー設定（target_storesから自動生成）
     if not df.empty:
         all_stores = set()
         for stores in df["target_stores"]:
             for store in str(stores).split("、"):
-                if store.strip():
-                    all_stores.add(store.strip())
+                if store.strip(): all_stores.add(store.strip())
         store_options = ["すべて"] + sorted(list(all_stores))
         selected_store = st.sidebar.selectbox("業態絞り込み", store_options)
-    else:
-        selected_store = "すべて"
+    else: selected_store = "すべて"
         
-    search_query = st.sidebar.text_input("キーワード", placeholder="鶏肉...")
+    search_query = st.sidebar.text_input("キーワード (音声入力OK)", placeholder="例: ハンバーグ、鶏肉...")
     
     if not df.empty and "category" in df.columns:
         categories = ["すべて"] + list(df["category"].unique())
         selected_category = st.sidebar.selectbox("カテゴリ", categories)
-    else:
-        selected_category = "すべて"
+    else: selected_category = "すべて"
 
-    # フィルタリング
+    # --- 検索ロジック ---
     if not df.empty:
         filtered_df = df.copy()
+        
+        # 1. 業態フィルター
         if selected_store != "すべて":
             filtered_df = filtered_df[filtered_df["target_stores"].astype(str).apply(lambda x: selected_store in x)]
-        if search_query:
-            filtered_df = filtered_df[
-                filtered_df["title"].str.contains(search_query, case=False) |
-                filtered_df["ingredients"].apply(lambda x: search_query in str(x))
-            ]
+        
+        # 2. カテゴリフィルター
         if selected_category != "すべて":
             filtered_df = filtered_df[filtered_df["category"] == selected_category]
+
+        # 3. キーワード検索（ファジー検索）
+        if search_query:
+            # 検索用のスコア計算関数
+            def get_fuzzy_score(row):
+                # タイトルとの類似度
+                title_score = fuzz.partial_ratio(search_query.lower(), str(row['title']).lower())
+                
+                # 材料との類似度（リストを文字列にして検索）
+                ingredients_str = " ".join(row['ingredients'])
+                ing_score = fuzz.partial_ratio(search_query.lower(), ingredients_str.lower())
+                
+                # どちらか高い方を採用
+                return max(title_score, ing_score)
+
+            # スコアを計算して列に追加
+            filtered_df['match_score'] = filtered_df.apply(get_fuzzy_score, axis=1)
+            
+            # スコアが50点以上のものだけ残す（この数字を下げるともっと緩くなります）
+            filtered_df = filtered_df[filtered_df['match_score'] > 50]
+            
+            # スコアが高い順に並び替え
+            filtered_df = filtered_df.sort_values('match_score', ascending=False)
 
         st.write(f"検索結果: {len(filtered_df)} 件")
         
@@ -229,7 +224,6 @@ elif mode == "🔍 レシピ検索":
                         st.subheader(row["title"])
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']}")
                         st.text(f"⏱ {row['time']}")
-                        
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
@@ -249,7 +243,6 @@ elif mode == "🔍 レシピ検索":
                                         st.caption(f"コード: {matched_info.get('商品コード', '-')}")
                                         st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
                                         st.markdown(f"**保管温度**: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
-                                        st.markdown(f"**備考**: {matched_info.get('備考', '-')}")
                                 else:
                                     st.write(f"・ {ingredient_name}")
                             st.markdown("---")
@@ -260,45 +253,34 @@ elif mode == "🔍 レシピ検索":
 elif mode == "🎓 レシピ検定":
     st.title("🎓 レシピ検定")
     if not df.empty and len(df) >= 4:
-        if 'quiz_state' not in st.session_state:
-            st.session_state.quiz_state = "start"
-        if 'current_quiz' not in st.session_state:
-            st.session_state.current_quiz = None
-
+        if 'quiz_state' not in st.session_state: st.session_state.quiz_state = "start"
+        if 'current_quiz' not in st.session_state: st.session_state.current_quiz = None
         def generate_quiz():
             correct_row = df.sample(1).iloc[0]
             wrong_titles = df[df["title"] != correct_row["title"]]["title"].sample(3).tolist()
             options = wrong_titles + [correct_row["title"]]
             random.shuffle(options)
-            st.session_state.current_quiz = {
-                "data": correct_row, "options": options, "correct_answer": correct_row["title"]
-            }
+            st.session_state.current_quiz = {"data": correct_row, "options": options, "correct_answer": correct_row["title"]}
             st.session_state.quiz_state = "answering"
-
         col1, col2 = st.columns([2, 1])
         with col2:
             st.write("")
             if st.button("🔄 次の問題 / スタート", type="primary"):
                 generate_quiz()
                 st.rerun()
-
         if st.session_state.quiz_state == "answering" and st.session_state.current_quiz:
             q = st.session_state.current_quiz
             row = q["data"]
             with col1:
                 st.markdown("### Q. この料理名は？")
-                if row["image"] and str(row["image"]).startswith("http"):
-                    st.image(row["image"], width=400)
+                if row["image"] and str(row["image"]).startswith("http"): st.image(row["image"], width=400)
                 else:
                     st.info("📷 画像なし")
                     st.write("ヒント: " + " / ".join(row["ingredients"]))
-                
                 user_answer = st.radio("選択:", q["options"], key="quiz_radio")
                 if st.button("回答"):
                     if user_answer == q["correct_answer"]:
                         st.balloons()
                         st.success("🎉 正解！")
-                    else:
-                        st.error(f"残念... 正解は「{q['correct_answer']}」")
-    else:
-        st.warning("データ不足: クイズを行うにはレシピが4つ以上必要です")
+                    else: st.error(f"残念... 正解は「{q['correct_answer']}」")
+    else: st.warning("データ不足")
