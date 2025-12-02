@@ -3,13 +3,13 @@ import pandas as pd
 import random
 import urllib.parse
 from rapidfuzz import fuzz
-from streamlit_mic_recorder import speech_to_text # 👈 音声入力用のライブラリ
+from streamlit_mic_recorder import speech_to_text
 
 # ページ設定
 st.set_page_config(page_title="Recipe Viewer", layout="wide")
 
 # ==========================================
-# 👇 設定エリア：URL設定
+# 👇 設定エリア：URL設定完了済み
 # ==========================================
 
 # 1. レシピのCSV
@@ -44,47 +44,34 @@ def load_data():
                 return url
         return url
 
-    # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
-        if "target_stores" not in df_recipe.columns:
-            df_recipe["target_stores"] = "共通"
-        if "image" in df_recipe.columns:
-            df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
+        if "target_stores" not in df_recipe.columns: df_recipe["target_stores"] = "共通"
+        if "image" in df_recipe.columns: df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
         df_recipe = df_recipe.fillna("")
-    except:
-        df_recipe = pd.DataFrame()
+    except: df_recipe = pd.DataFrame()
 
-    # ② 食材マスタ
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
         if "商品名" in df_ing.columns:
             df_ing["商品名"] = df_ing["商品名"].astype(str).str.strip()
             ing_dict = df_ing.set_index("商品名").to_dict(orient="index")
-        else:
-            ing_dict = {}
-    except:
-        ing_dict = {}
+        else: ing_dict = {}
+    except: ing_dict = {}
 
-    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
-    except:
-        df_news = pd.DataFrame()
+    except: df_news = pd.DataFrame()
 
-    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
-        if "store_code" in df_stores.columns:
-            df_stores["store_code"] = df_stores["store_code"].str.strip()
-        if "password" in df_stores.columns:
-            df_stores["password"] = df_stores["password"].str.strip()
-    except:
-        df_stores = pd.DataFrame()
+        if "store_code" in df_stores.columns: df_stores["store_code"] = df_stores["store_code"].str.strip()
+        if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
+    except: df_stores = pd.DataFrame()
 
     return df_recipe, ing_dict, df_news, df_stores
 
@@ -108,15 +95,13 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.store_name = match.iloc[0]["store_name"]
                 st.rerun()
-            else:
-                st.error("店舗コードまたはパスワードが違います")
+            else: st.error("店舗コードまたはパスワードが違います")
         else:
             if input_password == "secret123":
                  st.session_state.logged_in = True
                  st.session_state.store_name = "管理者(緊急)"
                  st.rerun()
-            else:
-                 st.error("ログインできません")
+            else: st.error("ログインできません")
     st.stop()
 
 # --- レイアウト ---
@@ -127,8 +112,7 @@ st.sidebar.divider()
 # --- 🏠 ホーム ---
 if mode == "🏠 ホーム(お知らせ)":
     st.title("📢 本部からのお知らせ")
-    if df_news.empty:
-        st.info("現在、お知らせはありません。")
+    if df_news.empty: st.info("現在、お知らせはありません。")
     else:
         if "date" in df_news.columns:
             try:
@@ -154,11 +138,48 @@ if mode == "🏠 ホーム(お知らせ)":
                     link = f"{form_base_url}&{entry_id_store}={store_encoded}&{entry_id_title}={title_encoded}"
                     st.link_button("✅ 既読", link)
 
-# --- 🔍 レシピ検索（音声ボタン＆ファジー検索） ---
+# --- 🔍 レシピ検索（音声・横並びUI） ---
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
     
-    # サイドバー：業態フィルタ
+    # 検索値の初期化
+    if 'search_val' not in st.session_state:
+        st.session_state.search_val = ""
+
+    # ★ここが変更点：横並びレイアウト★
+    # カラムを作成（左: 音声ボタン、右: テキスト入力）
+    col_mic, col_text = st.columns([1, 4], gap="small")
+    
+    with col_mic:
+        st.write("") # 上の隙間調整
+        # 音声入力ボタン
+        voice_text = speech_to_text(
+            language='ja',
+            start_prompt="🎤 音声入力",  # ボタンの文字を変更
+            stop_prompt="⏹️ 停止", 
+            just_once=True,
+            key='voice_input',
+            use_container_width=True
+        )
+
+    # 音声が入ったらセッションステートを更新
+    if voice_text:
+        st.session_state.search_val = voice_text
+
+    with col_text:
+        # テキスト入力欄
+        search_query = st.text_input(
+            "キーワード検索", 
+            value=st.session_state.search_val, 
+            placeholder="料理名や材料を入力...",
+            label_visibility="collapsed" # ラベルを隠してスッキリさせる
+        )
+
+    # 手入力があった場合も同期
+    if search_query != st.session_state.search_val:
+        st.session_state.search_val = search_query
+
+    # フィルタリング設定（サイドバー）
     if not df.empty:
         all_stores = set()
         for stores in df["target_stores"]:
@@ -168,27 +189,6 @@ elif mode == "🔍 レシピ検索":
         selected_store = st.sidebar.selectbox("業態絞り込み", store_options)
     else: selected_store = "すべて"
     
-    # サイドバー：音声入力ボタン
-    st.sidebar.write("🎤 音声で入力")
-    # 音声入力を受け取る（日本語設定）
-    voice_text = speech_to_text(language='ja', start_prompt="録音開始", stop_prompt="録音終了", just_once=True, key='voice_input')
-    
-    # 検索ワードの決定（音声があればそれを、なければ入力欄を使う）
-    # セッションステートを使って値を同期させる
-    if 'search_val' not in st.session_state:
-        st.session_state.search_val = ""
-
-    if voice_text:
-        st.session_state.search_val = voice_text
-    
-    # テキスト入力欄（音声が入るとここも自動で書き換わる）
-    search_query = st.sidebar.text_input("キーワード", value=st.session_state.search_val, placeholder="例: ハンバーグ...")
-    
-    # もし手入力で書き換えた場合も同期
-    if search_query != st.session_state.search_val:
-         st.session_state.search_val = search_query
-
-    # カテゴリフィルタ
     if not df.empty and "category" in df.columns:
         categories = ["すべて"] + list(df["category"].unique())
         selected_category = st.sidebar.selectbox("カテゴリ", categories)
@@ -198,15 +198,13 @@ elif mode == "🔍 レシピ検索":
     if not df.empty:
         filtered_df = df.copy()
         
-        # 1. 業態フィルター
+        # 業態・カテゴリ
         if selected_store != "すべて":
             filtered_df = filtered_df[filtered_df["target_stores"].astype(str).apply(lambda x: selected_store in x)]
-        
-        # 2. カテゴリフィルター
         if selected_category != "すべて":
             filtered_df = filtered_df[filtered_df["category"] == selected_category]
 
-        # 3. キーワード検索（ファジー検索）
+        # キーワード検索（ファジー検索）
         if search_query:
             def get_fuzzy_score(row):
                 title_score = fuzz.partial_ratio(search_query.lower(), str(row['title']).lower())
