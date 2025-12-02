@@ -17,17 +17,17 @@ if not st.session_state.logged_in:
         st.info("パスワードを入力するとレシピが表示されます。")
         st.stop()
 
-# --- データを読み込む機能（2つのシートを読み込む） ---
+# --- データを読み込む機能 ---
 @st.cache_data(ttl=60)
 def load_data():
     # ---------------------------------------------------------
-    # 👇 ここにURLを2つ貼ってください！
+    # 👇 ここにURLを2つ貼ってください（貼り直し必須！）
     # ---------------------------------------------------------
     
     # 1. レシピのCSV URL
     recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?output=csv"
     
-    # 2. 食材マスタのCSV URL（新しく作った方）
+    # 2. 食材マスタのCSV URL
     ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?output=csv"
     
     # ---------------------------------------------------------
@@ -45,8 +45,8 @@ def load_data():
     # ② 食材データの読み込み
     try:
         df_ing = pd.read_csv(ingredient_csv)
-        df_ing = df_ing.fillna("-") # 空欄はハイフンにする
-        # 検索しやすいように「商品名」をキーにした辞書に変換
+        df_ing = df_ing.fillna("-")
+        # 検索しやすいように辞書に変換
         ing_dict = df_ing.set_index("商品名").to_dict(orient="index")
     except Exception:
         ing_dict = {}
@@ -130,39 +130,46 @@ if not df.empty:
                     with st.expander("詳細を見る"):
                         st.markdown("**🛒 材料 (タップで詳細)**")
                         
-                        # 材料をボタン（ポップオーバー）として表示
-                        # Streamlitの仕様上、ボタンを横に並べるためにcolumnsを使います
                         ingredients_list = row["ingredients"]
                         
-                        # 材料ごとにボタンを作成
                         for ingredient_name in ingredients_list:
                             ingredient_name = ingredient_name.strip()
-                            # マスタに情報があるか確認
+                            
+                            # --- 変更点：あいまい検索ロジック ---
+                            matched_info = None
+                            
+                            # 1. まず完全一致を探す
                             if ingredient_name in ingredient_dict:
-                                info = ingredient_dict[ingredient_name]
-                                # ポップオーバー（吹き出し）を表示
+                                matched_info = ingredient_dict[ingredient_name]
+                            else:
+                                # 2. なければ部分一致を探す（「マスタ名」の中に「レシピの材料名」が含まれているか？）
+                                for master_name, info in ingredient_dict.items():
+                                    # 例: レシピ「玉ねぎ」 in マスタ「北海道産玉ねぎ」
+                                    if ingredient_name in master_name:
+                                        matched_info = info
+                                        break # 1つ見つかったら終了
+                            # ------------------------------------
+
+                            if matched_info:
                                 with st.popover(f"ℹ️ {ingredient_name}"):
                                     st.markdown(f"### {ingredient_name}")
-                                    st.caption(f"商品コード: {info.get('商品コード', '-')}")
+                                    st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
                                     
-                                    # 重要な情報を表形式で表示
                                     st.markdown("#### 📦 管理情報")
                                     st.markdown(f"""
                                     | 項目 | 内容 |
                                     | :--- | :--- |
-                                    | **賞味期限** | {info.get('賞味期限', '-')} |
-                                    | **開封後期限** | {info.get('開封後賞味期限目安', '-')} |
-                                    | **保管温度** | {info.get('納品温度帯(保管温度帯)', '-')} |
-                                    | **開封後温度** | {info.get('開封後温度帯', '-')} |
+                                    | **賞味期限** | {matched_info.get('賞味期限', '-')} |
+                                    | **開封後期限** | {matched_info.get('開封後賞味期限目安', '-')} |
+                                    | **保管温度** | {matched_info.get('納品温度帯(保管温度帯)', '-')} |
+                                    | **開封後温度** | {matched_info.get('開封後温度帯', '-')} |
                                     """)
                                     
                                     st.markdown("#### 🏢 仕入・規格")
-                                    st.write(f"メーカー: {info.get('メーカー名', '-')}")
-                                    st.write(f"規格: {info.get('規格', '-')}")
-                                    st.write(f"備考: {info.get('備考', '-')}")
-
+                                    st.write(f"メーカー: {matched_info.get('メーカー名', '-')}")
+                                    st.write(f"規格: {matched_info.get('規格', '-')}")
+                                    st.write(f"備考: {matched_info.get('備考', '-')}")
                             else:
-                                # 情報がない場合はただのテキストで表示
                                 st.write(f"・ {ingredient_name}")
 
                         st.markdown("---")
