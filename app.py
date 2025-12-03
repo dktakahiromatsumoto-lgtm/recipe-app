@@ -1,3 +1,22 @@
+原因が判明しました！
+スプレッドシートの項目名（見出し）で、見た目を整えるために\*\*「Alt+Enter（改行）」\*\*を使っていませんか？
+
+コンピュータにとっては、
+
+  * `開封後賞味期限目安`（1行）
+  * `開封後賞味(改行)期限目安`（2行）
+
+は、\*\*「完全に別の名前」\*\*として扱われてしまいます。
+そのため、プログラムが「そんな名前の列はないよ」と判断してデータが空っぽになっていました。
+
+スプレッドシートを直す必要はありません！
+**「プログラム側で、読み込むときに勝手に改行を削除してあげる」** 処理を追加しました。これでどんな書き方をしていても正しく読み込まれます。
+
+`app.py` を以下のコードに上書きしてください。
+
+### 📋 修正版コード（列名の改行対応・app.py）
+
+```python
 import streamlit as st
 import pandas as pd
 import random
@@ -77,6 +96,9 @@ def load_data():
     # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
+        # 列名の改行を削除してきれいにする（これでエラー回避！）
+        df_recipe.columns = df_recipe.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
+        
         df_recipe["ingredients_raw"] = df_recipe["ingredients"].fillna("") 
         df_recipe["ingredients"] = df_recipe["ingredients_raw"].apply(clean_ingredients_list)
         
@@ -95,6 +117,9 @@ def load_data():
     # ② 食材マスタ
     try:
         df_ing = pd.read_csv(ingredient_csv)
+        # ★ここが重要：列名の改行を削除する処理を追加！★
+        df_ing.columns = df_ing.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
+        
         df_ing = df_ing.fillna("-")
         if "商品名" in df_ing.columns:
             df_ing["商品名"] = df_ing["商品名"].astype(str).str.strip()
@@ -248,7 +273,6 @@ def show_recipe_modal(row, ing_dict):
     
     with c3:
         st.subheader("🛒 食材・分量")
-        # 材料リストの表示（ポップオーバー対応）
         for _, item in ing_df.iterrows():
             name = item['食材']
             cols = st.columns([2, 1, 2])
@@ -264,7 +288,7 @@ def show_recipe_modal(row, ing_dict):
                     with st.popover(f"ℹ️ {name}", use_container_width=True):
                         st.markdown(f"**{matched_info.get('商品名', name)}**")
                         st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
-                        # ★ここを修正：ご希望の項目を表示★
+                        # ★ここを変更：ご希望の項目を表示するように修正★
                         st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
                         st.markdown(f"**保管(開封後)**: {matched_info.get('開封後温度帯', '-')}")
                         st.markdown(f"**期限(開封後)**: {matched_info.get('開封後賞味期限目安', '-')}")
@@ -276,7 +300,7 @@ def show_recipe_modal(row, ing_dict):
 
     with c4:
         st.subheader("📝 作り方")
-        st.markdown(str(row["steps"]).replace("\n", "  \n")) # 改行対応
+        st.markdown(str(row["steps"]).replace("\n", "  \n"))
 
     st.divider()
     store_enc = urllib.parse.quote(str(st.session_state.store_name))
@@ -446,7 +470,6 @@ elif mode == "🔍 レシピ検索":
                             for _, item in ing_df_simple.iterrows():
                                 name = item['食材']
                                 cols_exp = st.columns([2, 1, 2])
-                                
                                 matched_info = None
                                 if name in ingredient_dict: matched_info = ingredient_dict[name]
                                 else:
@@ -458,6 +481,7 @@ elif mode == "🔍 レシピ検索":
                                         with st.popover(f"ℹ️ {name}", use_container_width=True):
                                             st.markdown(f"**{matched_info.get('商品名', name)}**")
                                             st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
+                                            # ★詳細アコーディオン内も同じ項目を表示★
                                             st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
                                             st.markdown(f"**保管(開封後)**: {matched_info.get('開封後温度帯', '-')}")
                                             st.markdown(f"**期限(開封後)**: {matched_info.get('開封後賞味期限目安', '-')}")
@@ -468,7 +492,7 @@ elif mode == "🔍 レシピ検索":
                                 st.markdown("<hr style='margin: 0.2rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
                             st.markdown("**📝 作り方**")
-                            st.markdown(str(row["steps"]).replace("\n", "  \n")) # 改行対応
+                            st.markdown(str(row["steps"]).replace("\n", "  \n"))
                             st.divider()
                             store_enc = urllib.parse.quote(str(st.session_state.store_name))
                             recipe_enc = urllib.parse.quote(str(row['title']))
@@ -510,3 +534,4 @@ elif mode == "🎓 検定":
                         st.success("🎉 正解！")
                     else: st.error(f"残念... 正解は「{q['correct_answer']}」")
     else: st.warning("データ不足")
+```
