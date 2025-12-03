@@ -515,3 +515,19 @@ elif mode == "🎓 検定":
                         st.success("🎉 正解！")
                     else: st.error(f"残念... 正解は「{q['correct_answer']}」")
     else: st.warning("データ不足")
+# --- 🐛 画像リンク診断ツール（テスト用） ---
+st.divider()
+with st.expander("🔧 画像が表示されない時の診断ツール"):
+    st.write("現在読み込まれている画像のURL一覧です。クリックして開けるか確認してください。")
+    if not df.empty and "image" in df.columns:
+        # 画像があるレシピだけ抽出
+        debug_df = df[df["image"] != ""].copy()
+        debug_df = debug_df[["title", "image"]]
+        st.dataframe(
+            debug_df,
+            column_config={
+                "image": st.column_config.LinkColumn("画像URL (クリックして確認)")
+            }
+        )
+    else:
+        st.error("画像データが見つかりません。")
