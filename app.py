@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
+import os # ファイル存在確認用
 from rapidfuzz import fuzz
 from streamlit_mic_recorder import speech_to_text
 
@@ -32,6 +33,7 @@ st.markdown("""
 <style>
     div[data-testid="column"] { align-self: center; }
     div.stButton > button { height: 3rem; border-radius: 20px; padding: 0px 10px; width: 100%; }
+    th { background-color: #f0f2f6; }
     
     @media (max-width: 768px) {
         div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
@@ -77,7 +79,6 @@ def load_data():
     # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
-        # 列名の改行を削除してきれいにする（これでエラー回避！）
         df_recipe.columns = df_recipe.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
         
         df_recipe["ingredients_raw"] = df_recipe["ingredients"].fillna("") 
@@ -95,12 +96,10 @@ def load_data():
         df_recipe = df_recipe.fillna("-")
     except: df_recipe = pd.DataFrame()
 
-    # ② 食材マスタ
+    # ②〜⑤（省略なし）
     try:
         df_ing = pd.read_csv(ingredient_csv)
-        # ★ここが重要：列名の改行を削除する処理を追加！★
         df_ing.columns = df_ing.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
-        
         df_ing = df_ing.fillna("-")
         if "商品名" in df_ing.columns:
             df_ing["商品名"] = df_ing["商品名"].astype(str).str.strip()
@@ -108,13 +107,11 @@ def load_data():
         else: ing_dict = {}
     except: ing_dict = {}
 
-    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
     except: df_news = pd.DataFrame()
 
-    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
@@ -122,7 +119,6 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
-    # ⑤ 既読ログ
     try:
         df_log = pd.read_csv(news_log_csv)
         df_log = df_log.fillna("")
@@ -161,6 +157,12 @@ def generate_print_html(row, ing_df):
     cutlery_html = str(row["cutlery"]).replace("\n", "<br>")
     caution_html = str(row["caution"]).replace("\n", "<br>")
     
+    # 画像パスの処理（相対パス or URL）
+    img_src = row['image']
+    # 印刷用HTMLでは、相対パス画像を表示させるのが少し難しいため
+    # 本来はBase64エンコードなどが必要ですが、今回は簡易的にそのままパスを入れます。
+    # ※ブラウザの印刷プレビューで画像が出ない場合は、画像を右クリック「画像アドレスをコピー」して確認してください。
+    
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -196,7 +198,7 @@ def generate_print_html(row, ing_df):
         </table>
         <div class="main-container">
             <div class="left-col">
-                <img src="{row['image']}" style="max-width:100%; max-height:300px; object-fit:contain;">
+                <img src="{img_src}" style="max-width:100%; max-height:300px; object-fit:contain;">
             </div>
             <div class="right-col">
                 <div class="info-row"><span class="info-label">使用食器</span>{tableware_html}</div>
@@ -227,14 +229,17 @@ def show_recipe_modal(row, ing_dict):
         html_data = generate_print_html(row, ing_df)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
     
+    # 画像表示（ローカルパス対応）
+    img_src = str(row["image"]).strip()
+    if img_src and img_src != "-" and img_src != "nan":
+        st.image(img_src, use_container_width=True)
+    
     if "video" in row and str(row["video"]).startswith("http"):
         with st.expander("🎥 調理動画を見る", expanded=False):
             st.video(row["video"])
 
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        if row["image"] and str(row["image"]).startswith("http"):
-            st.image(row["image"], use_container_width=True)
         st.caption(f"⏱ 調理時間: {row['time']} | 📂 {row['category']}")
 
     with c2:
@@ -269,7 +274,6 @@ def show_recipe_modal(row, ing_dict):
                     with st.popover(f"ℹ️ {name}", use_container_width=True):
                         st.markdown(f"**{matched_info.get('商品名', name)}**")
                         st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
-                        # ★ここを変更：ご希望の項目を表示するように修正★
                         st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
                         st.markdown(f"**保管(開封後)**: {matched_info.get('開封後温度帯', '-')}")
                         st.markdown(f"**期限(開封後)**: {matched_info.get('開封後賞味期限目安', '-')}")
@@ -424,7 +428,6 @@ elif mode == "🔍 レシピ検索":
                 title_score = fuzz.partial_ratio(q, title)
                 ing_score = fuzz.partial_ratio(q, ingredients)
                 return max(title_score * 1.1, ing_score)
-            
             filtered_df['match_score'] = filtered_df.apply(get_fuzzy_score, axis=1)
             filtered_df = filtered_df[filtered_df['match_score'] > 60]
             filtered_df = filtered_df.sort_values('match_score', ascending=False)
@@ -437,17 +440,17 @@ elif mode == "🔍 レシピ検索":
                 col = cols[index % 3]
                 with col:
                     with st.container(border=True):
-                        if row["image"] and str(row["image"]).startswith("http"):
-                            st.image(row["image"], use_container_width=True)
+                        # ★ここを変更：画像表示ロジック（ローカルパス対応）★
+                        img_src = str(row["image"]).strip()
+                        if img_src and img_src != "-" and img_src != "nan":
+                            st.image(img_src, use_container_width=True)
+                        
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
-                        
-                        # ★ここも修正：詳細アコーディオン内もポップオーバー＆改行対応★
                         with st.expander("詳細"):
-                            st.markdown("**🛒 食材・分量**")
                             ing_df_simple = parse_ingredients_to_df(row["ingredients_raw"])
-                            
+                            # アコーディオン内もポップオーバー対応
                             for _, item in ing_df_simple.iterrows():
                                 name = item['食材']
                                 cols_exp = st.columns([2, 1, 2])
@@ -456,18 +459,15 @@ elif mode == "🔍 レシピ検索":
                                 else:
                                     for k, info in ingredient_dict.items():
                                         if name in k: matched_info = info; break
-                                
                                 with cols_exp[0]:
                                     if matched_info:
                                         with st.popover(f"ℹ️ {name}", use_container_width=True):
                                             st.markdown(f"**{matched_info.get('商品名', name)}**")
                                             st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
-                                            # ★詳細アコーディオン内も同じ項目を表示★
                                             st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
                                             st.markdown(f"**保管(開封後)**: {matched_info.get('開封後温度帯', '-')}")
                                             st.markdown(f"**期限(開封後)**: {matched_info.get('開封後賞味期限目安', '-')}")
-                                    else:
-                                        st.write(name)
+                                    else: st.write(name)
                                 with cols_exp[1]: st.write(item['使用量'])
                                 with cols_exp[2]: st.caption(item['備考'])
                                 st.markdown("<hr style='margin: 0.2rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
@@ -515,19 +515,3 @@ elif mode == "🎓 検定":
                         st.success("🎉 正解！")
                     else: st.error(f"残念... 正解は「{q['correct_answer']}」")
     else: st.warning("データ不足")
-# --- 🐛 画像リンク診断ツール（テスト用） ---
-st.divider()
-with st.expander("🔧 画像が表示されない時の診断ツール"):
-    st.write("現在読み込まれている画像のURL一覧です。クリックして開けるか確認してください。")
-    if not df.empty and "image" in df.columns:
-        # 画像があるレシピだけ抽出
-        debug_df = df[df["image"] != ""].copy()
-        debug_df = debug_df[["title", "image"]]
-        st.dataframe(
-            debug_df,
-            column_config={
-                "image": st.column_config.LinkColumn("画像URL (クリックして確認)")
-            }
-        )
-    else:
-        st.error("画像データが見つかりません。")
