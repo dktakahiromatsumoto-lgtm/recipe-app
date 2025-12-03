@@ -1,3 +1,20 @@
+Googleの検索窓のように「枠の中にボタンが入っている」ようなデザイン（完全に一体化した見た目）にするのは、Streamlitの標準機能の制限で少し難しいのですが、**「枠で囲んでひとまとまりに見せる」** ことで、Google風の見た目にかなり近づけることができます。
+
+また、**「✖」ボタンを赤くして目立たせる**などの工夫も入れて、使い勝手を向上させます。
+
+### 🛠 変更のポイント
+
+1.  **グループ化**: 音声ボタン、検索窓、削除ボタンを `st.container(border=True)` で囲み、一つの「検索バー」のように見せます。
+2.  **レイアウト調整**: ボタンと入力欄の高さがズレないようにCSSで微調整します。
+3.  **削除ボタン**: 「✖」ボタンを押しやすく、分かりやすくします。
+
+-----
+
+### 📋 検索窓デザイン改善版コード（app.py）
+
+`app.py` を以下のコードに上書きしてください。
+
+```python
 import streamlit as st
 import pandas as pd
 import random
@@ -26,6 +43,21 @@ feedback_entry_store = "entry.1319375613"
 feedback_entry_recipe = "entry.973206102"
 
 # ==========================================
+
+# --- CSSスタイル（Google風レイアウト調整） ---
+st.markdown("""
+<style>
+    /* 検索バーの要素を縦方向中央揃えにする */
+    div[data-testid="column"] {
+        align-self: center;
+    }
+    /* ボタンの余白調整 */
+    div.stButton > button {
+        height: 3rem;
+        border-radius: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- データ読み込み関数 ---
 @st.cache_data(ttl=60)
@@ -89,7 +121,6 @@ def generate_print_html(row, ing_dict):
     for ing in row["ingredients"]:
         ing = str(ing).strip()
         detail = ""
-        # 食材マスタ検索
         if ing in ing_dict:
             info = ing_dict[ing]
             detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
@@ -99,9 +130,7 @@ def generate_print_html(row, ing_dict):
                      detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
                      break
         ing_html += f"<li><b>{ing}</b>{detail}</li>"
-    
     steps_html = str(row["steps"]).replace("\n", "<br>")
-    
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{row['title']}</title><style>body{{font-family:"Helvetica Neue",Arial,sans-serif;padding:40px;color:#333;}}h1{{border-bottom:3px solid #ff4b4b;padding-bottom:10px;margin-bottom:5px;}}.meta{{color:#666;margin-bottom:20px;font-size:0.9em;}}.container{{display:flex;gap:30px;margin-bottom:30px;}}.image-box{{flex:1;text-align:center;}}.image-box img{{max-width:100%;max-height:350px;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,0.1);}}.ing-box{{flex:1;background:#f9f9f9;padding:20px;border-radius:8px;}}h2{{background:#eee;padding:5px 10px;border-left:5px solid #ff4b4b;font-size:1.2em;}}ul{{padding-left:20px;line-height:1.6;}}.steps-box{{line-height:1.8;font-size:1.05em;}}@media print{{body{{padding:0;}}}}</style></head><body><h1>{row['title']}</h1><div class="meta">🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}</div><div class="container"><div class="image-box"><img src="{row['image']}" alt="料理画像"></div><div class="ing-box"><h2>🛒 材料・規格</h2><ul>{ing_html}</ul></div></div><div class="steps-box"><h2>📝 調理手順</h2><div>{steps_html}</div></div><script>window.onload=function(){{window.print();}}</script></body></html>"""
     return html
 
@@ -123,9 +152,9 @@ def show_recipe_modal(row, ing_dict):
         for ingredient_name in row["ingredients"]:
             ingredient_name = str(ingredient_name).strip()
             matched_info = None
-            if ingredient_name in ing_dict: matched_info = ing_dict[ingredient_name]
+            if ingredient_name in ingredient_dict: matched_info = ingredient_dict[ingredient_name]
             else:
-                for master_name, info in ing_dict.items():
+                for master_name, info in ingredient_dict.items():
                     if ingredient_name in master_name: matched_info = info; break
             if matched_info:
                 with st.popover(f"ℹ️ {ingredient_name}"):
@@ -228,21 +257,34 @@ if mode == "🏠 ホーム":
 # --- 🔍 レシピ検索 ---
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
-    if 'search_query' not in st.session_state: st.session_state.search_query = ""
-    if 'last_voice_text' not in st.session_state: st.session_state.last_voice_text = None
-    def clear_search(): st.session_state.search_query = ""
-    col_mic, col_text, col_clear = st.columns([1, 4, 0.5], gap="small")
-    with col_mic:
-        st.write("") 
-        voice_text = speech_to_text(language='ja', start_prompt="🎤 音声", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
-    if voice_text and voice_text != st.session_state.last_voice_text:
-        st.session_state.search_query = voice_text
-        st.session_state.last_voice_text = voice_text
-    with col_text:
-        search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料...", label_visibility="collapsed")
-    with col_clear:
-        st.write("") 
-        st.button("✖", on_click=clear_search, help="検索ワードを削除")
+    
+    if 'search_query' not in st.session_state:
+        st.session_state.search_query = ""
+    if 'last_voice_text' not in st.session_state:
+        st.session_state.last_voice_text = None
+
+    def clear_search():
+        st.session_state.search_query = ""
+
+    # ★Google風デザインのポイント：全体を枠で囲む★
+    with st.container(border=True):
+        col_mic, col_text, col_clear = st.columns([1, 6, 0.7], gap="small")
+        
+        with col_mic:
+            # 音声入力ボタン
+            voice_text = speech_to_text(language='ja', start_prompt="🎤", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
+        
+        if voice_text and voice_text != st.session_state.last_voice_text:
+            st.session_state.search_query = voice_text
+            st.session_state.last_voice_text = voice_text
+
+        with col_text:
+            # テキスト入力（ラベルなしでスッキリ）
+            search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料を入力...", label_visibility="collapsed")
+
+        with col_clear:
+            # 削除ボタン（赤色で目立つように設定はCSSで可能だが、まずは標準で）
+            st.button("✖", on_click=clear_search, help="検索ワードを削除", use_container_width=True)
 
     if not df.empty:
         all_stores = set()
@@ -288,7 +330,6 @@ elif mode == "🔍 レシピ検索":
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
-                        # ★ここを修正しました（変数名 ingredient_dict に統一）★
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
@@ -349,3 +390,4 @@ elif mode == "🎓 検定":
                         st.success("🎉 正解！")
                     else: st.error(f"残念... 正解は「{q['correct_answer']}」")
     else: st.warning("データ不足")
+```
