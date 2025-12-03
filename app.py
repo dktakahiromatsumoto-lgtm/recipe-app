@@ -27,49 +27,26 @@ feedback_entry_recipe = "entry.973206102"
 
 # ==========================================
 
-# --- CSSスタイル（スマホ強制横並び・強力版） ---
+# --- CSSスタイル ---
 st.markdown("""
 <style>
-    /* 全体共通：カラム内の要素を中央揃え */
-    div[data-testid="column"] {
-        align-self: center;
-    }
-    /* ボタンデザイン */
-    div.stButton > button {
-        height: 3rem;
-        border-radius: 20px;
-        padding: 0px 10px;
-        width: 100%;
-    }
-    
-    /* ★スマホ(幅768px以下)用の強力なスタイル★ */
+    div[data-testid="column"] { align-self: center; }
+    div.stButton > button { height: 3rem; border-radius: 20px; padding: 0px 10px; width: 100%; }
     @media (max-width: 768px) {
-        /* 枠線付きコンテナの中にある「水平ブロック」を強制的に横並びにする */
         div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
-            flex-direction: row !important; /* 横並び強制 */
-            flex-wrap: nowrap !important;   /* 折り返し禁止 */
-            align-items: center !important;
-            gap: 5px !important;            /* 隙間を狭く */
+            flex-direction: row !important; flex-wrap: nowrap !important; gap: 0.5rem !important;
         }
-        
-        /* 1列目：マイクボタン（幅固定） */
-        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:nth-of-type(1) {
-            flex: 0 0 50px !important;      /* 幅50px固定 */
-            min-width: 50px !important;
-            max-width: 50px !important;
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] [data-testid="column"] {
+            width: auto !important; flex: unset !important; min-width: 0 !important;
         }
-
-        /* 2列目：検索窓（残り全部） */
-        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:nth-of-type(2) {
-            flex: 1 1 auto !important;      /* 残りの幅を全部使う */
-            min-width: 0 !important;        /* 縮小可能にする */
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(1) {
+            flex: 0 0 50px !important; max-width: 50px !important;
         }
-
-        /* 3列目：削除ボタン（幅固定） */
-        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:nth-of-type(3) {
-            flex: 0 0 50px !important;      /* 幅50px固定 */
-            min-width: 50px !important;
-            max-width: 50px !important;
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2) {
+            flex: 1 1 auto !important;
+        }
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(3) {
+            flex: 0 0 50px !important; max-width: 50px !important;
         }
     }
 </style>
@@ -92,7 +69,16 @@ def load_data():
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
         if "target_stores" not in df_recipe.columns: df_recipe["target_stores"] = "共通"
-        if "image" in df_recipe.columns: df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
+        
+        # 画像URL変換
+        if "image" in df_recipe.columns: 
+            df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
+        
+        # ★動画URL変換（Googleドライブの場合のみ変換が必要）★
+        if "video" in df_recipe.columns:
+            # YouTubeはそのままでOK、Driveなら変換
+            df_recipe["video"] = df_recipe["video"].apply(lambda x: convert_google_drive_url(x) if "drive.google.com" in str(x) else x)
+            
         df_recipe = df_recipe.fillna("")
     except: df_recipe = pd.DataFrame()
 
@@ -137,7 +123,6 @@ def generate_print_html(row, ing_dict):
     for ing in row["ingredients"]:
         ing = str(ing).strip()
         detail = ""
-        # 食材マスタ検索
         if ing in ing_dict:
             info = ing_dict[ing]
             detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
@@ -159,9 +144,18 @@ def show_recipe_modal(row, ing_dict):
     with col_print:
         html_data = generate_print_html(row, ing_dict)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
+    
     if row["image"] and str(row["image"]).startswith("http"):
         st.image(row["image"], use_container_width=True)
+    
     st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
+    
+    # ★ここが新機能：動画プレーヤー★
+    # 「video」列が存在し、かつ中身がURLっぽい場合のみ表示
+    if "video" in row and str(row["video"]).startswith("http"):
+        with st.expander("🎥 調理動画を見る", expanded=True):
+            st.video(row["video"])
+
     st.divider()
     col1, col2 = st.columns([1, 1])
     with col1:
@@ -169,9 +163,9 @@ def show_recipe_modal(row, ing_dict):
         for ingredient_name in row["ingredients"]:
             ingredient_name = str(ingredient_name).strip()
             matched_info = None
-            if ingredient_name in ing_dict: matched_info = ing_dict[ingredient_name]
+            if ingredient_name in ingredient_dict: matched_info = ingredient_dict[ingredient_name]
             else:
-                for master_name, info in ing_dict.items():
+                for master_name, info in ingredient_dict.items():
                     if ingredient_name in master_name: matched_info = info; break
             if matched_info:
                 with st.popover(f"ℹ️ {ingredient_name}"):
@@ -283,20 +277,15 @@ elif mode == "🔍 レシピ検索":
     def clear_search():
         st.session_state.search_query = ""
 
-    # ★Google風デザイン：枠で囲む★
     with st.container(border=True):
         col_mic, col_text, col_clear = st.columns([1, 6, 0.7], gap="small")
-        
         with col_mic:
             voice_text = speech_to_text(language='ja', start_prompt="🎤", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
-        
         if voice_text and voice_text != st.session_state.last_voice_text:
             st.session_state.search_query = voice_text
             st.session_state.last_voice_text = voice_text
-
         with col_text:
-            search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料...", label_visibility="collapsed")
-
+            search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料を入力...", label_visibility="collapsed")
         with col_clear:
             st.button("✖", on_click=clear_search, help="検索ワードを削除", use_container_width=True)
 
