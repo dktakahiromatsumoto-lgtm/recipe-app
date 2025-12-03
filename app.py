@@ -6,12 +6,7 @@ from rapidfuzz import fuzz
 from streamlit_mic_recorder import speech_to_text
 
 # ページ設定
-# ★ここを変更：page_icon に画像をセットしました！
-st.set_page_config(
-    page_title="Recipe Viewer", 
-    page_icon="img/favicon.ico", 
-    layout="wide"
-)
+st.set_page_config(page_title="Recipe Viewer", layout="wide")
 
 # ==========================================
 # 👇 設定エリア：URL設定完了済み
@@ -79,12 +74,10 @@ df, ingredient_dict, df_news, df_stores = load_data()
 
 # --- 印刷用HTML生成関数 ---
 def generate_print_html(row, ing_dict):
-    # 材料リストのHTML作成
     ing_html = ""
     for ing in row["ingredients"]:
         ing = str(ing).strip()
         detail = ""
-        # 食材マスタに詳細があれば追記
         if ing in ing_dict:
             info = ing_dict[ing]
             detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
@@ -95,10 +88,8 @@ def generate_print_html(row, ing_dict):
                      break
         ing_html += f"<li><b>{ing}</b>{detail}</li>"
 
-    # 作り方の改行をHTMLの<br>に変換
     steps_html = str(row["steps"]).replace("\n", "<br>")
 
-    # HTMLテンプレート
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -116,9 +107,7 @@ def generate_print_html(row, ing_dict):
             h2 {{ background: #eee; padding: 5px 10px; border-left: 5px solid #ff4b4b; font-size: 1.2em; }}
             ul {{ padding-left: 20px; line-height: 1.6; }}
             .steps-box {{ line-height: 1.8; font-size: 1.05em; }}
-            @media print {{
-                body {{ padding: 0; }}
-            }}
+            @media print {{ body {{ padding: 0; }} }}
         </style>
     </head>
     <body>
@@ -126,25 +115,12 @@ def generate_print_html(row, ing_dict):
         <div class="meta">
             🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}
         </div>
-
         <div class="container">
-            <div class="image-box">
-                <img src="{row['image']}" alt="料理画像">
-            </div>
-            <div class="ing-box">
-                <h2>🛒 材料・規格</h2>
-                <ul>{ing_html}</ul>
-            </div>
+            <div class="image-box"><img src="{row['image']}" alt="料理画像"></div>
+            <div class="ing-box"><h2>🛒 材料・規格</h2><ul>{ing_html}</ul></div>
         </div>
-
-        <div class="steps-box">
-            <h2>📝 調理手順</h2>
-            <div>{steps_html}</div>
-        </div>
-        
-        <script>
-            window.onload = function() {{ window.print(); }}
-        </script>
+        <div class="steps-box"><h2>📝 調理手順</h2><div>{steps_html}</div></div>
+        <script>window.onload = function() {{ window.print(); }}</script>
     </body>
     </html>
     """
@@ -155,19 +131,10 @@ def generate_print_html(row, ing_dict):
 @st.dialog("レシピ詳細", width="large")
 def show_recipe_modal(row, ing_dict):
     col_header, col_print = st.columns([8, 1])
-    
-    with col_header:
-        st.header(row["title"])
-    
+    with col_header: st.header(row["title"])
     with col_print:
         html_data = generate_print_html(row, ing_dict)
-        st.download_button(
-            label="🖨️",
-            data=html_data,
-            file_name=f"{row['title']}.html",
-            mime="text/html",
-            help="印刷用ファイルをダウンロード"
-        )
+        st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
     
     if row["image"] and str(row["image"]).startswith("http"):
         st.image(row["image"], use_container_width=True)
@@ -176,14 +143,12 @@ def show_recipe_modal(row, ing_dict):
     st.divider()
     
     col1, col2 = st.columns([1, 1])
-    
     with col1:
         st.subheader("🛒 材料")
         for ingredient_name in row["ingredients"]:
             ingredient_name = str(ingredient_name).strip()
             matched_info = None
-            if ingredient_name in ing_dict:
-                matched_info = ing_dict[ingredient_name]
+            if ingredient_name in ing_dict: matched_info = ing_dict[ingredient_name]
             else:
                 for master_name, info in ing_dict.items():
                     if ingredient_name in master_name: matched_info = info; break
@@ -193,8 +158,7 @@ def show_recipe_modal(row, ing_dict):
                     st.markdown(f"**{matched_info.get('商品名', ingredient_name)}**")
                     st.caption(f"期限: {matched_info.get('賞味期限', '-')}")
                     st.caption(f"保管: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
-            else:
-                st.write(f"・ {ingredient_name}")
+            else: st.write(f"・ {ingredient_name}")
 
     with col2:
         st.subheader("📝 作り方")
@@ -269,15 +233,30 @@ if mode == "🏠 ホーム":
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
     
-    if 'search_val' not in st.session_state: st.session_state.search_val = ""
-    col_mic, col_text = st.columns([1, 4], gap="small")
+    # 検索値の初期化
+    if 'search_val' not in st.session_state:
+        st.session_state.search_val = ""
+
+    # ★ここが変更点：3列構成（音声・テキスト・クリア）★
+    # 削除ボタンの機能
+    def clear_search():
+        st.session_state.search_val = ""
+
+    col_mic, col_text, col_clear = st.columns([1, 4, 0.5], gap="small")
+    
     with col_mic:
         st.write("") 
         voice_text = speech_to_text(language='ja', start_prompt="🎤 音声", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
     if voice_text: st.session_state.search_val = voice_text
+
     with col_text:
         search_query = st.text_input("キーワード検索", value=st.session_state.search_val, placeholder="料理名や材料...", label_visibility="collapsed")
     if search_query != st.session_state.search_val: st.session_state.search_val = search_query
+
+    with col_clear:
+        st.write("") # ボタン位置調整
+        # 全削除ボタン
+        st.button("✖", on_click=clear_search, help="検索ワードを削除")
 
     if not df.empty:
         all_stores = set()
@@ -353,7 +332,6 @@ elif mode == "🔍 レシピ検索":
                             st.write(row["steps"])
                             
                             st.divider()
-                            # フィードバックリンク
                             store_enc = urllib.parse.quote(str(st.session_state.store_name))
                             recipe_enc = urllib.parse.quote(str(row['title']))
                             fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
