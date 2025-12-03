@@ -27,17 +27,37 @@ feedback_entry_recipe = "entry.973206102"
 
 # ==========================================
 
-# --- CSSスタイル（Google風レイアウト調整） ---
+# --- CSSスタイル（スマホ対応・レイアウト調整） ---
 st.markdown("""
 <style>
     /* 検索バーの要素を縦方向中央揃えにする */
     div[data-testid="column"] {
         align-self: center;
     }
-    /* ボタンの余白調整 */
+    /* ボタンの高さ調整 */
     div.stButton > button {
         height: 3rem;
         border-radius: 20px;
+        padding: 0px 10px;
+    }
+    
+    /* ★ここが重要：スマホでも検索バーを強制的に横並びにするCSS★ */
+    @media (max-width: 768px) {
+        /* 枠線(border)で囲まれたエリアの中にあるカラムだけを横並び維持 */
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+        }
+        /* 横並びにした時、カラムが潰れないように最小幅制限を解除 */
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] {
+            min-width: 0 !important;
+            width: auto !important;
+            flex: 1 !important;
+        }
+        /* 検索窓（真ん中）だけ少し広く取る */
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-of-type(2) {
+            flex: 3 !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -54,6 +74,7 @@ def load_data():
             except IndexError: return url
         return url
 
+    # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
@@ -62,6 +83,7 @@ def load_data():
         df_recipe = df_recipe.fillna("")
     except: df_recipe = pd.DataFrame()
 
+    # ② 食材マスタ
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
@@ -71,11 +93,13 @@ def load_data():
         else: ing_dict = {}
     except: ing_dict = {}
 
+    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
     except: df_news = pd.DataFrame()
 
+    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
@@ -83,6 +107,7 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
+    # ⑤ 既読ログ
     try:
         df_log = pd.read_csv(news_log_csv)
         df_log = df_log.fillna("")
@@ -99,6 +124,7 @@ def generate_print_html(row, ing_dict):
     for ing in row["ingredients"]:
         ing = str(ing).strip()
         detail = ""
+        # 食材マスタ検索
         if ing in ing_dict:
             info = ing_dict[ing]
             detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
@@ -130,9 +156,9 @@ def show_recipe_modal(row, ing_dict):
         for ingredient_name in row["ingredients"]:
             ingredient_name = str(ingredient_name).strip()
             matched_info = None
-            if ingredient_name in ingredient_dict: matched_info = ingredient_dict[ingredient_name]
+            if ingredient_name in ing_dict: matched_info = ing_dict[ingredient_name]
             else:
-                for master_name, info in ingredient_dict.items():
+                for master_name, info in ing_dict.items():
                     if ingredient_name in master_name: matched_info = info; break
             if matched_info:
                 with st.popover(f"ℹ️ {ingredient_name}"):
@@ -244,12 +270,11 @@ elif mode == "🔍 レシピ検索":
     def clear_search():
         st.session_state.search_query = ""
 
-    # ★Google風デザインのポイント：全体を枠で囲む★
+    # ★Google風デザイン（スマホ横並び対応）★
     with st.container(border=True):
         col_mic, col_text, col_clear = st.columns([1, 6, 0.7], gap="small")
         
         with col_mic:
-            # 音声入力ボタン
             voice_text = speech_to_text(language='ja', start_prompt="🎤", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
         
         if voice_text and voice_text != st.session_state.last_voice_text:
@@ -257,11 +282,9 @@ elif mode == "🔍 レシピ検索":
             st.session_state.last_voice_text = voice_text
 
         with col_text:
-            # テキスト入力（ラベルなしでスッキリ）
             search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料を入力...", label_visibility="collapsed")
 
         with col_clear:
-            # 削除ボタン
             st.button("✖", on_click=clear_search, help="検索ワードを削除", use_container_width=True)
 
     if not df.empty:
