@@ -27,36 +27,49 @@ feedback_entry_recipe = "entry.973206102"
 
 # ==========================================
 
-# --- CSSスタイル（スマホ対応・レイアウト調整） ---
+# --- CSSスタイル（スマホ強制横並び・強力版） ---
 st.markdown("""
 <style>
-    /* 検索バーの要素を縦方向中央揃えにする */
+    /* 全体共通：カラム内の要素を中央揃え */
     div[data-testid="column"] {
         align-self: center;
     }
-    /* ボタンの高さ調整 */
+    /* ボタンデザイン */
     div.stButton > button {
         height: 3rem;
         border-radius: 20px;
         padding: 0px 10px;
+        width: 100%;
     }
     
-    /* ★ここが重要：スマホでも検索バーを強制的に横並びにするCSS★ */
+    /* ★スマホ(幅768px以下)用の強力なスタイル★ */
     @media (max-width: 768px) {
-        /* 枠線(border)で囲まれたエリアの中にあるカラムだけを横並び維持 */
-        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
+        /* 枠線付きコンテナの中にある「水平ブロック」を強制的に横並びにする */
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important; /* 横並び強制 */
+            flex-wrap: nowrap !important;   /* 折り返し禁止 */
+            align-items: center !important;
+            gap: 5px !important;            /* 隙間を狭く */
         }
-        /* 横並びにした時、カラムが潰れないように最小幅制限を解除 */
-        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] {
-            min-width: 0 !important;
-            width: auto !important;
-            flex: 1 !important;
+        
+        /* 1列目：マイクボタン（幅固定） */
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:nth-of-type(1) {
+            flex: 0 0 50px !important;      /* 幅50px固定 */
+            min-width: 50px !important;
+            max-width: 50px !important;
         }
-        /* 検索窓（真ん中）だけ少し広く取る */
-        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-of-type(2) {
-            flex: 3 !important;
+
+        /* 2列目：検索窓（残り全部） */
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:nth-of-type(2) {
+            flex: 1 1 auto !important;      /* 残りの幅を全部使う */
+            min-width: 0 !important;        /* 縮小可能にする */
+        }
+
+        /* 3列目：削除ボタン（幅固定） */
+        div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:nth-of-type(3) {
+            flex: 0 0 50px !important;      /* 幅50px固定 */
+            min-width: 50px !important;
+            max-width: 50px !important;
         }
     }
 </style>
@@ -270,7 +283,7 @@ elif mode == "🔍 レシピ検索":
     def clear_search():
         st.session_state.search_query = ""
 
-    # ★Google風デザイン（スマホ横並び対応）★
+    # ★Google風デザイン：枠で囲む★
     with st.container(border=True):
         col_mic, col_text, col_clear = st.columns([1, 6, 0.7], gap="small")
         
@@ -282,7 +295,7 @@ elif mode == "🔍 レシピ検索":
             st.session_state.last_voice_text = voice_text
 
         with col_text:
-            search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料を入力...", label_visibility="collapsed")
+            search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料...", label_visibility="collapsed")
 
         with col_clear:
             st.button("✖", on_click=clear_search, help="検索ワードを削除", use_container_width=True)
