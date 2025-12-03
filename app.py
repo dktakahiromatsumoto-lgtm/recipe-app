@@ -1,20 +1,3 @@
-Googleの検索窓のように「枠の中にボタンが入っている」ようなデザイン（完全に一体化した見た目）にするのは、Streamlitの標準機能の制限で少し難しいのですが、**「枠で囲んでひとまとまりに見せる」** ことで、Google風の見た目にかなり近づけることができます。
-
-また、**「✖」ボタンを赤くして目立たせる**などの工夫も入れて、使い勝手を向上させます。
-
-### 🛠 変更のポイント
-
-1.  **グループ化**: 音声ボタン、検索窓、削除ボタンを `st.container(border=True)` で囲み、一つの「検索バー」のように見せます。
-2.  **レイアウト調整**: ボタンと入力欄の高さがズレないようにCSSで微調整します。
-3.  **削除ボタン**: 「✖」ボタンを押しやすく、分かりやすくします。
-
------
-
-### 📋 検索窓デザイン改善版コード（app.py）
-
-`app.py` を以下のコードに上書きしてください。
-
-```python
 import streamlit as st
 import pandas as pd
 import random
@@ -71,7 +54,6 @@ def load_data():
             except IndexError: return url
         return url
 
-    # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
@@ -80,7 +62,6 @@ def load_data():
         df_recipe = df_recipe.fillna("")
     except: df_recipe = pd.DataFrame()
 
-    # ② 食材マスタ
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
@@ -90,13 +71,11 @@ def load_data():
         else: ing_dict = {}
     except: ing_dict = {}
 
-    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
     except: df_news = pd.DataFrame()
 
-    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
@@ -104,7 +83,6 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
-    # ⑤ 既読ログ
     try:
         df_log = pd.read_csv(news_log_csv)
         df_log = df_log.fillna("")
@@ -283,7 +261,7 @@ elif mode == "🔍 レシピ検索":
             search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料を入力...", label_visibility="collapsed")
 
         with col_clear:
-            # 削除ボタン（赤色で目立つように設定はCSSで可能だが、まずは標準で）
+            # 削除ボタン
             st.button("✖", on_click=clear_search, help="検索ワードを削除", use_container_width=True)
 
     if not df.empty:
@@ -390,4 +368,3 @@ elif mode == "🎓 検定":
                         st.success("🎉 正解！")
                     else: st.error(f"残念... 正解は「{q['correct_answer']}」")
     else: st.warning("データ不足")
-```
