@@ -65,7 +65,6 @@ def load_data():
             except IndexError: return url
         return url
 
-    # 材料リストをきれいに抽出する関数
     def clean_ingredients_list(raw_text):
         names = []
         if pd.isna(raw_text): return []
@@ -93,7 +92,7 @@ def load_data():
         df_recipe = df_recipe.fillna("-")
     except: df_recipe = pd.DataFrame()
 
-    # ②〜⑤（省略なしで全て記述）
+    # ② 食材マスタ
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
@@ -103,11 +102,13 @@ def load_data():
         else: ing_dict = {}
     except: ing_dict = {}
 
+    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
     except: df_news = pd.DataFrame()
 
+    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
@@ -115,6 +116,7 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
+    # ⑤ 既読ログ
     try:
         df_log = pd.read_csv(news_log_csv)
         df_log = df_log.fillna("")
@@ -262,14 +264,10 @@ def show_recipe_modal(row, ing_dict):
                     with st.popover(f"ℹ️ {name}", use_container_width=True):
                         st.markdown(f"**{matched_info.get('商品名', name)}**")
                         st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
-                        st.table(pd.DataFrame({
-                            "項目": ["賞味期限", "保管", "開封後"],
-                            "内容": [
-                                matched_info.get('賞味期限', '-'),
-                                matched_info.get('納品温度帯(保管温度帯)', '-'),
-                                matched_info.get('開封後賞味期限目安', '-')
-                            ]
-                        }))
+                        # ★ここを修正：ご希望の項目を表示★
+                        st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
+                        st.markdown(f"**保管(開封後)**: {matched_info.get('開封後温度帯', '-')}")
+                        st.markdown(f"**期限(開封後)**: {matched_info.get('開封後賞味期限目安', '-')}")
                 else:
                     st.write(name)
             with cols[1]: st.write(item['使用量'])
@@ -440,13 +438,11 @@ elif mode == "🔍 レシピ検索":
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
                         
-                        # ★詳細（アコーディオン）の中身もポップオーバー＆改行対応★
+                        # ★ここも修正：詳細アコーディオン内もポップオーバー＆改行対応★
                         with st.expander("詳細"):
                             st.markdown("**🛒 食材・分量**")
-                            # 材料データのパース
                             ing_df_simple = parse_ingredients_to_df(row["ingredients_raw"])
                             
-                            # ループして表示（モーダルと同じロジック）
                             for _, item in ing_df_simple.iterrows():
                                 name = item['食材']
                                 cols_exp = st.columns([2, 1, 2])
@@ -462,14 +458,9 @@ elif mode == "🔍 レシピ検索":
                                         with st.popover(f"ℹ️ {name}", use_container_width=True):
                                             st.markdown(f"**{matched_info.get('商品名', name)}**")
                                             st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
-                                            st.table(pd.DataFrame({
-                                                "項目": ["賞味期限", "保管", "開封後"],
-                                                "内容": [
-                                                    matched_info.get('賞味期限', '-'),
-                                                    matched_info.get('納品温度帯(保管温度帯)', '-'),
-                                                    matched_info.get('開封後賞味期限目安', '-')
-                                                ]
-                                            }))
+                                            st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
+                                            st.markdown(f"**保管(開封後)**: {matched_info.get('開封後温度帯', '-')}")
+                                            st.markdown(f"**期限(開封後)**: {matched_info.get('開封後賞味期限目安', '-')}")
                                     else:
                                         st.write(name)
                                 with cols_exp[1]: st.write(item['使用量'])
@@ -479,7 +470,6 @@ elif mode == "🔍 レシピ検索":
                             st.markdown("**📝 作り方**")
                             st.markdown(str(row["steps"]).replace("\n", "  \n")) # 改行対応
                             st.divider()
-                            
                             store_enc = urllib.parse.quote(str(st.session_state.store_name))
                             recipe_enc = urllib.parse.quote(str(row['title']))
                             fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
