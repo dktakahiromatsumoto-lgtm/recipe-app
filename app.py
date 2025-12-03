@@ -279,24 +279,24 @@ elif mode == "🔍 レシピ検索":
         if selected_category != "すべて":
             filtered_df = filtered_df[filtered_df["category"] == selected_category]
         
-        # ★ここが変更点：検索精度向上ロジック★
+        # ★ここが変更点：検索精度向上ロジック（部分一致+閾値60）★
         if search_query:
             def get_fuzzy_score(row):
                 q = search_query.lower()
                 title = str(row['title']).lower()
                 ingredients = " ".join(row['ingredients']).lower()
                 
-                # token_set_ratio: 単語の順序を無視して比較（「トマト パスタ」==「パスタ トマト」）
-                title_score = fuzz.token_set_ratio(q, title)
-                ing_score = fuzz.token_set_ratio(q, ingredients)
+                # partial_ratio: 「フライドポテト」の中に「ポテト」があれば100点
+                title_score = fuzz.partial_ratio(q, title)
+                ing_score = fuzz.partial_ratio(q, ingredients)
                 
-                # タイトルヒットを1.2倍に重み付けして優先
-                return max(title_score * 1.2, ing_score)
+                # タイトルヒットを優遇 (1.1倍)
+                return max(title_score * 1.1, ing_score)
 
             filtered_df['match_score'] = filtered_df.apply(get_fuzzy_score, axis=1)
             
-            # 閾値を75点に上げ、甘いヒットを排除
-            filtered_df = filtered_df[filtered_df['match_score'] > 75]
+            # 閾値を 60点 に設定（ポタ＝50点は弾かれ、ポテト＝100点は通る）
+            filtered_df = filtered_df[filtered_df['match_score'] > 60]
             
             filtered_df = filtered_df.sort_values('match_score', ascending=False)
 
