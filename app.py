@@ -6,7 +6,7 @@ from rapidfuzz import fuzz
 from streamlit_mic_recorder import speech_to_text
 
 # ページ設定
-st.set_page_config(page_title="Recipe Viewer", layout="wide")
+st.set_page_config(page_title="Recipe Viewer", page_icon="img/favicon.ico", layout="wide")
 
 # ==========================================
 # 👇 設定エリア：URL設定完了済み
@@ -15,6 +15,9 @@ recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8
 ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=805502789&single=true&output=csv"
 news_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=1725848377&single=true&output=csv"
 store_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=285648220&single=true&output=csv"
+
+# ★今回追加：既読ログ（フォームの回答）のURL
+news_log_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQFXVfpeGAVHkjw65-GFPStuh1PSvteeVcckdAGYKhIOZ1YBX3HftRHgXxY-ozV_AWk1E-s4zP4lqYC/pub?output=csv"
 
 # フォーム設定
 news_form_url = "https://docs.google.com/forms/d/e/1FAIpQLSeLSyph6KJ3aPPgdCCxKuZ2tRLCZI13ftsM3-godUqzB1hOyg/viewform?usp=pp_url"
@@ -38,6 +41,7 @@ def load_data():
             except IndexError: return url
         return url
 
+    # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
@@ -46,6 +50,7 @@ def load_data():
         df_recipe = df_recipe.fillna("")
     except: df_recipe = pd.DataFrame()
 
+    # ② 食材マスタ
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
@@ -55,11 +60,13 @@ def load_data():
         else: ing_dict = {}
     except: ing_dict = {}
 
+    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
     except: df_news = pd.DataFrame()
 
+    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
@@ -67,9 +74,15 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
-    return df_recipe, ing_dict, df_news, df_stores
+    # ⑤ 既読ログ（★追加）
+    try:
+        df_log = pd.read_csv(news_log_csv)
+        df_log = df_log.fillna("")
+    except: df_log = pd.DataFrame()
 
-df, ingredient_dict, df_news, df_stores = load_data()
+    return df_recipe, ing_dict, df_news, df_stores, df_log
+
+df, ingredient_dict, df_news, df_stores, df_log = load_data()
 
 
 # --- 印刷用HTML生成関数 ---
@@ -87,45 +100,9 @@ def generate_print_html(row, ing_dict):
                      detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
                      break
         ing_html += f"<li><b>{ing}</b>{detail}</li>"
-
     steps_html = str(row["steps"]).replace("\n", "<br>")
-
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>{row['title']}</title>
-        <style>
-            body {{ font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; padding: 40px; color: #333; }}
-            h1 {{ border-bottom: 3px solid #ff4b4b; padding-bottom: 10px; margin-bottom: 5px; }}
-            .meta {{ color: #666; margin-bottom: 20px; font-size: 0.9em; }}
-            .container {{ display: flex; gap: 30px; margin-bottom: 30px; }}
-            .image-box {{ flex: 1; text-align: center; }}
-            .image-box img {{ max-width: 100%; max-height: 350px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }}
-            .ing-box {{ flex: 1; background: #f9f9f9; padding: 20px; border-radius: 8px; }}
-            h2 {{ background: #eee; padding: 5px 10px; border-left: 5px solid #ff4b4b; font-size: 1.2em; }}
-            ul {{ padding-left: 20px; line-height: 1.6; }}
-            .steps-box {{ line-height: 1.8; font-size: 1.05em; }}
-            @media print {{ body {{ padding: 0; }} }}
-        </style>
-    </head>
-    <body>
-        <h1>{row['title']}</h1>
-        <div class="meta">
-            🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}
-        </div>
-        <div class="container">
-            <div class="image-box"><img src="{row['image']}" alt="料理画像"></div>
-            <div class="ing-box"><h2>🛒 材料・規格</h2><ul>{ing_html}</ul></div>
-        </div>
-        <div class="steps-box"><h2>📝 調理手順</h2><div>{steps_html}</div></div>
-        <script>window.onload = function() {{ window.print(); }}</script>
-    </body>
-    </html>
-    """
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{row['title']}</title><style>body{{font-family:"Helvetica Neue",Arial,sans-serif;padding:40px;color:#333;}}h1{{border-bottom:3px solid #ff4b4b;padding-bottom:10px;margin-bottom:5px;}}.meta{{color:#666;margin-bottom:20px;font-size:0.9em;}}.container{{display:flex;gap:30px;margin-bottom:30px;}}.image-box{{flex:1;text-align:center;}}.image-box img{{max-width:100%;max-height:350px;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,0.1);}}.ing-box{{flex:1;background:#f9f9f9;padding:20px;border-radius:8px;}}h2{{background:#eee;padding:5px 10px;border-left:5px solid #ff4b4b;font-size:1.2em;}}ul{{padding-left:20px;line-height:1.6;}}.steps-box{{line-height:1.8;font-size:1.05em;}}@media print{{body{{padding:0;}}}}</style></head><body><h1>{row['title']}</h1><div class="meta">🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}</div><div class="container"><div class="image-box"><img src="{row['image']}" alt="料理画像"></div><div class="ing-box"><h2>🛒 材料・規格</h2><ul>{ing_html}</ul></div></div><div class="steps-box"><h2>📝 調理手順</h2><div>{steps_html}</div></div><script>window.onload=function(){{window.print();}}</script></body></html>"""
     return html
-
 
 # --- 全画面表示用ダイアログ ---
 @st.dialog("レシピ詳細", width="large")
@@ -135,13 +112,10 @@ def show_recipe_modal(row, ing_dict):
     with col_print:
         html_data = generate_print_html(row, ing_dict)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
-    
     if row["image"] and str(row["image"]).startswith("http"):
         st.image(row["image"], use_container_width=True)
-    
     st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
     st.divider()
-    
     col1, col2 = st.columns([1, 1])
     with col1:
         st.subheader("🛒 材料")
@@ -152,18 +126,15 @@ def show_recipe_modal(row, ing_dict):
             else:
                 for master_name, info in ing_dict.items():
                     if ingredient_name in master_name: matched_info = info; break
-            
             if matched_info:
                 with st.popover(f"ℹ️ {ingredient_name}"):
                     st.markdown(f"**{matched_info.get('商品名', ingredient_name)}**")
                     st.caption(f"期限: {matched_info.get('賞味期限', '-')}")
                     st.caption(f"保管: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
             else: st.write(f"・ {ingredient_name}")
-
     with col2:
         st.subheader("📝 作り方")
         st.write(row["steps"])
-
     st.divider()
     store_enc = urllib.parse.quote(str(st.session_state.store_name))
     recipe_enc = urllib.parse.quote(str(row['title']))
@@ -202,58 +173,84 @@ st.sidebar.title(f"👤 {st.session_state.store_name}")
 mode = st.sidebar.radio("メニュー", ["🏠 ホーム", "🔍 レシピ検索", "🎓 検定"])
 st.sidebar.divider()
 
-# --- 🏠 ホーム ---
+# --- 🏠 ホーム（既読振り分け機能付き） ---
 if mode == "🏠 ホーム":
     st.title("📢 お知らせ")
-    if df_news.empty: st.info("現在、お知らせはありません。")
+    
+    if df_news.empty:
+        st.info("現在、お知らせはありません。")
     else:
         if "date" in df_news.columns:
             try: df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce'); df_news = df_news.sort_values("date", ascending=False)
             except: pass
+
+        # --- 既読チェックロジック ---
+        # 自分の店舗の既読リストを作る
+        my_read_titles = []
+        if not df_log.empty:
+            # ログの中から自分の店舗の回答を抽出
+            my_logs = df_log[df_log["店舗名"] == st.session_state.store_name]
+            my_read_titles = my_logs["確認した記事"].unique().tolist()
+
+        unread_news = []
+        read_news = []
+
+        # 振り分け
         for index, row in df_news.iterrows():
-            is_important = str(row.get("important", "")).upper() == "TRUE"
-            with st.container(border=True):
-                col1, col2 = st.columns([0.8, 0.2])
-                with col1:
-                    title_text = row.get('title', '無題')
-                    if is_important: st.markdown(f"### 🔴 {title_text}")
-                    else: st.markdown(f"### {title_text}")
-                    if "date" in row and pd.notnull(row['date']):
-                        try: st.caption(f"📅 {row['date'].strftime('%Y/%m/%d')}")
-                        except: st.caption(f"📅 {row.get('date', '')}")
+            if row['title'] in my_read_titles:
+                read_news.append(row)
+            else:
+                unread_news.append(row)
+
+        # --- ① 未読エリア（重要・ボタンあり） ---
+        st.subheader(f"⚡ 未読のお知らせ ({len(unread_news)})")
+        if not unread_news:
+            st.success("🎉 全て確認済みです！")
+        else:
+            for row in unread_news:
+                is_important = str(row.get("important", "")).upper() == "TRUE"
+                with st.container(border=True):
+                    col1, col2 = st.columns([0.8, 0.2])
+                    with col1:
+                        title_text = row.get('title', '無題')
+                        if is_important: st.markdown(f"### 🔴 {title_text}")
+                        else: st.markdown(f"### {title_text}")
+                        if "date" in row and pd.notnull(row['date']):
+                            try: st.caption(f"📅 {row['date'].strftime('%Y/%m/%d')}")
+                            except: st.caption(f"📅 {row.get('date', '')}")
+                        st.write(row.get('content', ''))
+                    with col2:
+                        st.write("") 
+                        store_enc = urllib.parse.quote(str(st.session_state.store_name))
+                        title_enc = urllib.parse.quote(str(row.get('title', '')))
+                        link = f"{news_form_url}&{news_entry_store}={store_enc}&{news_entry_title}={title_enc}"
+                        st.link_button("✅ 既読にする", link, type="primary")
+
+        # --- ② 既読エリア（控えめ・ボタンなし） ---
+        if read_news:
+            st.divider()
+            with st.expander(f"🗄️ 既読のお知らせ履歴 ({len(read_news)})"):
+                for row in read_news:
+                    st.markdown(f"**✅ {row.get('title', '無題')}**")
+                    st.caption(f"📅 {row.get('date', '')}")
                     st.write(row.get('content', ''))
-                with col2:
-                    st.write("") 
-                    store_enc = urllib.parse.quote(str(st.session_state.store_name))
-                    title_enc = urllib.parse.quote(str(row.get('title', '')))
-                    link = f"{news_form_url}&{news_entry_store}={store_enc}&{news_entry_title}={title_enc}"
-                    st.link_button("✅ 既読", link)
+                    st.divider()
 
 # --- 🔍 レシピ検索 ---
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
-    
-    if 'search_query' not in st.session_state:
-        st.session_state.search_query = ""
-    if 'last_voice_text' not in st.session_state:
-        st.session_state.last_voice_text = None
-
-    def clear_search():
-        st.session_state.search_query = ""
-
+    if 'search_query' not in st.session_state: st.session_state.search_query = ""
+    if 'last_voice_text' not in st.session_state: st.session_state.last_voice_text = None
+    def clear_search(): st.session_state.search_query = ""
     col_mic, col_text, col_clear = st.columns([1, 4, 0.5], gap="small")
-    
     with col_mic:
         st.write("") 
         voice_text = speech_to_text(language='ja', start_prompt="🎤 音声", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
-    
     if voice_text and voice_text != st.session_state.last_voice_text:
         st.session_state.search_query = voice_text
         st.session_state.last_voice_text = voice_text
-
     with col_text:
         search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料...", label_visibility="collapsed")
-
     with col_clear:
         st.write("") 
         st.button("✖", on_click=clear_search, help="検索ワードを削除")
@@ -266,7 +263,6 @@ elif mode == "🔍 レシピ検索":
         store_options = ["すべて"] + sorted(list(all_stores))
         selected_store = st.sidebar.selectbox("業態", store_options)
     else: selected_store = "すべて"
-    
     if not df.empty and "category" in df.columns:
         categories = ["すべて"] + list(df["category"].unique())
         selected_category = st.sidebar.selectbox("カテゴリ", categories)
@@ -278,32 +274,20 @@ elif mode == "🔍 レシピ検索":
             filtered_df = filtered_df[filtered_df["target_stores"].astype(str).apply(lambda x: selected_store in x)]
         if selected_category != "すべて":
             filtered_df = filtered_df[filtered_df["category"] == selected_category]
-        
-        # ★ここが変更点：検索精度向上ロジック（部分一致+閾値60）★
         if search_query:
             def get_fuzzy_score(row):
                 q = search_query.lower()
                 title = str(row['title']).lower()
                 ingredients = " ".join(row['ingredients']).lower()
-                
-                # partial_ratio: 「フライドポテト」の中に「ポテト」があれば100点
                 title_score = fuzz.partial_ratio(q, title)
                 ing_score = fuzz.partial_ratio(q, ingredients)
-                
-                # タイトルヒットを優遇 (1.1倍)
                 return max(title_score * 1.1, ing_score)
-
             filtered_df['match_score'] = filtered_df.apply(get_fuzzy_score, axis=1)
-            
-            # 閾値を 60点 に設定（ポタ＝50点は弾かれ、ポテト＝100点は通る）
             filtered_df = filtered_df[filtered_df['match_score'] > 60]
-            
             filtered_df = filtered_df.sort_values('match_score', ascending=False)
 
         st.write(f"検索結果: {len(filtered_df)} 件")
-        
-        if filtered_df.empty:
-            st.info("見つかりませんでした")
+        if filtered_df.empty: st.info("見つかりませんでした")
         else:
             cols = st.columns(3)
             for index, (i, row) in enumerate(filtered_df.iterrows()):
@@ -312,35 +296,28 @@ elif mode == "🔍 レシピ検索":
                     with st.container(border=True):
                         if row["image"] and str(row["image"]).startswith("http"):
                             st.image(row["image"], use_container_width=True)
-                        
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
-                        
-                        st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']}")
-                        st.text(f"⏱ {row['time']}")
-
+                        st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
                             for ingredient_name in ingredients_list:
                                 ingredient_name = str(ingredient_name).strip()
                                 matched_info = None
-                                if ingredient_name in ingredient_dict:
-                                    matched_info = ingredient_dict[ingredient_name]
+                                if ingredient_name in ingredient_dict: matched_info = ing_dict[ingredient_name]
                                 else:
-                                    for master_name, info in ingredient_dict.items():
+                                    for master_name, info in ing_dict.items():
                                         if ingredient_name in master_name: matched_info = info; break
                                 if matched_info:
                                     with st.popover(f"ℹ️ {ingredient_name}"):
-                                        st.markdown(f"### {matched_info.get('商品名', ingredient_name)}")
-                                        st.caption(f"コード: {matched_info.get('商品コード', '-')}")
-                                        st.markdown(f"**賞味期限**: {matched_info.get('賞味期限', '-')}")
-                                        st.markdown(f"**保管温度**: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
+                                        st.markdown(f"**{matched_info.get('商品名', ingredient_name)}**")
+                                        st.caption(f"期限: {matched_info.get('賞味期限', '-')}")
+                                        st.caption(f"保管: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
                                 else: st.write(f"・ {ingredient_name}")
                             st.markdown("---")
                             st.markdown("**📝 作り方**")
                             st.write(row["steps"])
-                            
                             st.divider()
                             store_enc = urllib.parse.quote(str(st.session_state.store_name))
                             recipe_enc = urllib.parse.quote(str(row['title']))
