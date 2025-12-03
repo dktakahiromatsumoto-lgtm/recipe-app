@@ -233,29 +233,40 @@ if mode == "🏠 ホーム":
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
     
-    # 検索値の初期化
-    if 'search_val' not in st.session_state:
-        st.session_state.search_val = ""
+    # ★検索・削除機能の改善★
+    # キーワード保持用のセッションステートを初期化
+    if 'search_query' not in st.session_state:
+        st.session_state.search_query = ""
+    if 'last_voice_text' not in st.session_state:
+        st.session_state.last_voice_text = None
 
-    # ★ここが変更点：3列構成（音声・テキスト・クリア）★
     # 削除ボタンの機能
     def clear_search():
-        st.session_state.search_val = ""
+        st.session_state.search_query = ""
 
     col_mic, col_text, col_clear = st.columns([1, 4, 0.5], gap="small")
     
     with col_mic:
         st.write("") 
         voice_text = speech_to_text(language='ja', start_prompt="🎤 音声", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
-    if voice_text: st.session_state.search_val = voice_text
+    
+    # 音声入力があった場合、かつ前回と同じでなければ更新する（リロードによるゾンビ復活防止）
+    if voice_text and voice_text != st.session_state.last_voice_text:
+        st.session_state.search_query = voice_text
+        st.session_state.last_voice_text = voice_text
 
     with col_text:
-        search_query = st.text_input("キーワード検索", value=st.session_state.search_val, placeholder="料理名や材料...", label_visibility="collapsed")
-    if search_query != st.session_state.search_val: st.session_state.search_val = search_query
+        # keyを指定してsession_stateと直接同期させる
+        search_query = st.text_input(
+            "キーワード検索", 
+            key="search_query", # これにより st.session_state.search_query が入力値になります
+            placeholder="料理名や材料...", 
+            label_visibility="collapsed"
+        )
 
     with col_clear:
-        st.write("") # ボタン位置調整
-        # 全削除ボタン
+        st.write("") 
+        # コールバックでクリア
         st.button("✖", on_click=clear_search, help="検索ワードを削除")
 
     if not df.empty:
@@ -301,14 +312,12 @@ elif mode == "🔍 レシピ検索":
                         if row["image"] and str(row["image"]).startswith("http"):
                             st.image(row["image"], use_container_width=True)
                         
-                        # タイトルボタン
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']}")
                         st.text(f"⏱ {row['time']}")
 
-                        # 詳細アコーディオン
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
