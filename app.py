@@ -233,14 +233,11 @@ if mode == "🏠 ホーム":
 elif mode == "🔍 レシピ検索":
     st.title("🔍 Recipe Search")
     
-    # ★検索・削除機能の改善★
-    # キーワード保持用のセッションステートを初期化
     if 'search_query' not in st.session_state:
         st.session_state.search_query = ""
     if 'last_voice_text' not in st.session_state:
         st.session_state.last_voice_text = None
 
-    # 削除ボタンの機能
     def clear_search():
         st.session_state.search_query = ""
 
@@ -250,23 +247,15 @@ elif mode == "🔍 レシピ検索":
         st.write("") 
         voice_text = speech_to_text(language='ja', start_prompt="🎤 音声", stop_prompt="⏹️", just_once=True, key='voice_input', use_container_width=True)
     
-    # 音声入力があった場合、かつ前回と同じでなければ更新する（リロードによるゾンビ復活防止）
     if voice_text and voice_text != st.session_state.last_voice_text:
         st.session_state.search_query = voice_text
         st.session_state.last_voice_text = voice_text
 
     with col_text:
-        # keyを指定してsession_stateと直接同期させる
-        search_query = st.text_input(
-            "キーワード検索", 
-            key="search_query", # これにより st.session_state.search_query が入力値になります
-            placeholder="料理名や材料...", 
-            label_visibility="collapsed"
-        )
+        search_query = st.text_input("キーワード検索", key="search_query", placeholder="料理名や材料...", label_visibility="collapsed")
 
     with col_clear:
         st.write("") 
-        # コールバックでクリア
         st.button("✖", on_click=clear_search, help="検索ワードを削除")
 
     if not df.empty:
@@ -289,14 +278,26 @@ elif mode == "🔍 レシピ検索":
             filtered_df = filtered_df[filtered_df["target_stores"].astype(str).apply(lambda x: selected_store in x)]
         if selected_category != "すべて":
             filtered_df = filtered_df[filtered_df["category"] == selected_category]
+        
+        # ★ここが変更点：検索精度向上ロジック★
         if search_query:
             def get_fuzzy_score(row):
-                title_score = fuzz.partial_ratio(search_query.lower(), str(row['title']).lower())
-                ingredients_str = " ".join(row['ingredients'])
-                ing_score = fuzz.partial_ratio(search_query.lower(), ingredients_str.lower())
-                return max(title_score, ing_score)
+                q = search_query.lower()
+                title = str(row['title']).lower()
+                ingredients = " ".join(row['ingredients']).lower()
+                
+                # token_set_ratio: 単語の順序を無視して比較（「トマト パスタ」==「パスタ トマト」）
+                title_score = fuzz.token_set_ratio(q, title)
+                ing_score = fuzz.token_set_ratio(q, ingredients)
+                
+                # タイトルヒットを1.2倍に重み付けして優先
+                return max(title_score * 1.2, ing_score)
+
             filtered_df['match_score'] = filtered_df.apply(get_fuzzy_score, axis=1)
-            filtered_df = filtered_df[filtered_df['match_score'] > 50]
+            
+            # 閾値を75点に上げ、甘いヒットを排除
+            filtered_df = filtered_df[filtered_df['match_score'] > 75]
+            
             filtered_df = filtered_df.sort_values('match_score', ascending=False)
 
         st.write(f"検索結果: {len(filtered_df)} 件")
