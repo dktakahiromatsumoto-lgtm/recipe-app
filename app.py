@@ -33,9 +33,6 @@ st.markdown("""
     div[data-testid="column"] { align-self: center; }
     div.stButton > button { height: 3rem; border-radius: 20px; padding: 0px 10px; width: 100%; }
     
-    /* 材料表のスタイル調整 */
-    .ing-row { border-bottom: 1px solid #f0f2f6; padding: 8px 0; }
-    
     @media (max-width: 768px) {
         div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
             flex-direction: row !important; flex-wrap: nowrap !important; gap: 0.5rem !important;
@@ -68,13 +65,11 @@ def load_data():
             except IndexError: return url
         return url
 
-    # 材料リストをきれいに抽出する関数（改行やカンマに対応）
+    # 材料リストをきれいに抽出する関数
     def clean_ingredients_list(raw_text):
         names = []
         if pd.isna(raw_text): return []
-        # 改行で区切る
         for line in str(raw_text).split('\n'):
-            # 読点で区切った最初の部分が「材料名」
             parts = line.split('、')
             if parts[0].strip():
                 names.append(parts[0].strip())
@@ -83,9 +78,7 @@ def load_data():
     # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
-        # 元のテキストを保持
         df_recipe["ingredients_raw"] = df_recipe["ingredients"].fillna("") 
-        # 検索用にリスト化（ここで修正！）
         df_recipe["ingredients"] = df_recipe["ingredients_raw"].apply(clean_ingredients_list)
         
         if "target_stores" not in df_recipe.columns: df_recipe["target_stores"] = "共通"
@@ -100,7 +93,7 @@ def load_data():
         df_recipe = df_recipe.fillna("-")
     except: df_recipe = pd.DataFrame()
 
-    # ②〜⑤（変更なし）
+    # ②〜⑤（省略なしで全て記述）
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
@@ -249,25 +242,15 @@ def show_recipe_modal(row, ing_dict):
 
     st.divider()
 
-    # ★ここを修正：材料リストを「ボタン（Popover）」と「テキスト」の組み合わせで表っぽく表示★
     c3, c4 = st.columns([1, 1])
     
     with c3:
         st.subheader("🛒 食材・分量")
-        
-        # 見出し
-        h_col1, h_col2, h_col3 = st.columns([2, 1, 2])
-        h_col1.caption("**食材 (タップで詳細)**")
-        h_col2.caption("**使用量**")
-        h_col3.caption("**備考**")
-        st.divider()
-
-        # 各行を表示
+        # 材料リストの表示（ポップオーバー対応）
         for _, item in ing_df.iterrows():
             name = item['食材']
             cols = st.columns([2, 1, 2])
             
-            # 1列目：食材名（マスタにあればボタン、なければテキスト）
             matched_info = None
             if name in ingredient_dict: matched_info = ingredient_dict[name]
             else:
@@ -289,21 +272,13 @@ def show_recipe_modal(row, ing_dict):
                         }))
                 else:
                     st.write(name)
-            
-            # 2列目：使用量
-            with cols[1]:
-                st.write(item['使用量'])
-            
-            # 3列目：備考
-            with cols[2]:
-                st.caption(item['備考'])
-            
-            # 行間の線（細く）
+            with cols[1]: st.write(item['使用量'])
+            with cols[2]: st.caption(item['備考'])
             st.markdown("<hr style='margin: 0.2rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
     with c4:
         st.subheader("📝 作り方")
-        st.write(row["steps"])
+        st.markdown(str(row["steps"]).replace("\n", "  \n")) # 改行対応
 
     st.divider()
     store_enc = urllib.parse.quote(str(st.session_state.store_name))
@@ -441,10 +416,8 @@ elif mode == "🔍 レシピ検索":
             def get_fuzzy_score(row):
                 q = search_query.lower()
                 title = str(row['title']).lower()
-                # ingredientsはリストになっているので結合して検索
                 ingredients = " ".join(row['ingredients']) if isinstance(row['ingredients'], list) else str(row['ingredients'])
                 ingredients = ingredients.lower()
-                
                 title_score = fuzz.partial_ratio(q, title)
                 ing_score = fuzz.partial_ratio(q, ingredients)
                 return max(title_score * 1.1, ing_score)
@@ -466,14 +439,47 @@ elif mode == "🔍 レシピ検索":
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
+                        
+                        # ★詳細（アコーディオン）の中身もポップオーバー＆改行対応★
                         with st.expander("詳細"):
+                            st.markdown("**🛒 食材・分量**")
+                            # 材料データのパース
                             ing_df_simple = parse_ingredients_to_df(row["ingredients_raw"])
-                            # 詳細表示用の表（タップ機能なし）
-                            st.dataframe(ing_df_simple, use_container_width=True, hide_index=True)
-                            st.markdown("---")
+                            
+                            # ループして表示（モーダルと同じロジック）
+                            for _, item in ing_df_simple.iterrows():
+                                name = item['食材']
+                                cols_exp = st.columns([2, 1, 2])
+                                
+                                matched_info = None
+                                if name in ingredient_dict: matched_info = ingredient_dict[name]
+                                else:
+                                    for k, info in ingredient_dict.items():
+                                        if name in k: matched_info = info; break
+                                
+                                with cols_exp[0]:
+                                    if matched_info:
+                                        with st.popover(f"ℹ️ {name}", use_container_width=True):
+                                            st.markdown(f"**{matched_info.get('商品名', name)}**")
+                                            st.caption(f"商品コード: {matched_info.get('商品コード', '-')}")
+                                            st.table(pd.DataFrame({
+                                                "項目": ["賞味期限", "保管", "開封後"],
+                                                "内容": [
+                                                    matched_info.get('賞味期限', '-'),
+                                                    matched_info.get('納品温度帯(保管温度帯)', '-'),
+                                                    matched_info.get('開封後賞味期限目安', '-')
+                                                ]
+                                            }))
+                                    else:
+                                        st.write(name)
+                                with cols_exp[1]: st.write(item['使用量'])
+                                with cols_exp[2]: st.caption(item['備考'])
+                                st.markdown("<hr style='margin: 0.2rem 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+
                             st.markdown("**📝 作り方**")
-                            st.write(row["steps"])
+                            st.markdown(str(row["steps"]).replace("\n", "  \n")) # 改行対応
                             st.divider()
+                            
                             store_enc = urllib.parse.quote(str(st.session_state.store_name))
                             recipe_enc = urllib.parse.quote(str(row['title']))
                             fb_link = f"{feedback_form_url}&{feedback_entry_store}={store_enc}&{feedback_entry_recipe}={recipe_enc}"
