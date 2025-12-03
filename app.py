@@ -15,8 +15,6 @@ recipe_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8
 ingredient_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=805502789&single=true&output=csv"
 news_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=1725848377&single=true&output=csv"
 store_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQN7zOdMeK_lRCOzG8coIdHkdawIbSvlLyhU5KpEHAbca75YCCT1gBwB85K2ah5gcr6Yd3rPessbNWN/pub?gid=285648220&single=true&output=csv"
-
-# ★今回追加：既読ログ（フォームの回答）のURL
 news_log_csv = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQFXVfpeGAVHkjw65-GFPStuh1PSvteeVcckdAGYKhIOZ1YBX3HftRHgXxY-ozV_AWk1E-s4zP4lqYC/pub?output=csv"
 
 # フォーム設定
@@ -74,7 +72,7 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
-    # ⑤ 既読ログ（★追加）
+    # ⑤ 既読ログ
     try:
         df_log = pd.read_csv(news_log_csv)
         df_log = df_log.fillna("")
@@ -91,6 +89,7 @@ def generate_print_html(row, ing_dict):
     for ing in row["ingredients"]:
         ing = str(ing).strip()
         detail = ""
+        # 食材マスタ検索
         if ing in ing_dict:
             info = ing_dict[ing]
             detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
@@ -100,7 +99,9 @@ def generate_print_html(row, ing_dict):
                      detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
                      break
         ing_html += f"<li><b>{ing}</b>{detail}</li>"
+    
     steps_html = str(row["steps"]).replace("\n", "<br>")
+    
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{row['title']}</title><style>body{{font-family:"Helvetica Neue",Arial,sans-serif;padding:40px;color:#333;}}h1{{border-bottom:3px solid #ff4b4b;padding-bottom:10px;margin-bottom:5px;}}.meta{{color:#666;margin-bottom:20px;font-size:0.9em;}}.container{{display:flex;gap:30px;margin-bottom:30px;}}.image-box{{flex:1;text-align:center;}}.image-box img{{max-width:100%;max-height:350px;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,0.1);}}.ing-box{{flex:1;background:#f9f9f9;padding:20px;border-radius:8px;}}h2{{background:#eee;padding:5px 10px;border-left:5px solid #ff4b4b;font-size:1.2em;}}ul{{padding-left:20px;line-height:1.6;}}.steps-box{{line-height:1.8;font-size:1.05em;}}@media print{{body{{padding:0;}}}}</style></head><body><h1>{row['title']}</h1><div class="meta">🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}</div><div class="container"><div class="image-box"><img src="{row['image']}" alt="料理画像"></div><div class="ing-box"><h2>🛒 材料・規格</h2><ul>{ing_html}</ul></div></div><div class="steps-box"><h2>📝 調理手順</h2><div>{steps_html}</div></div><script>window.onload=function(){{window.print();}}</script></body></html>"""
     return html
 
@@ -173,39 +174,28 @@ st.sidebar.title(f"👤 {st.session_state.store_name}")
 mode = st.sidebar.radio("メニュー", ["🏠 ホーム", "🔍 レシピ検索", "🎓 検定"])
 st.sidebar.divider()
 
-# --- 🏠 ホーム（既読振り分け機能付き） ---
+# --- 🏠 ホーム ---
 if mode == "🏠 ホーム":
     st.title("📢 お知らせ")
-    
-    if df_news.empty:
-        st.info("現在、お知らせはありません。")
+    if df_news.empty: st.info("現在、お知らせはありません。")
     else:
         if "date" in df_news.columns:
             try: df_news["date"] = pd.to_datetime(df_news["date"], errors='coerce'); df_news = df_news.sort_values("date", ascending=False)
             except: pass
 
-        # --- 既読チェックロジック ---
-        # 自分の店舗の既読リストを作る
         my_read_titles = []
         if not df_log.empty:
-            # ログの中から自分の店舗の回答を抽出
             my_logs = df_log[df_log["店舗名"] == st.session_state.store_name]
             my_read_titles = my_logs["確認した記事"].unique().tolist()
 
         unread_news = []
         read_news = []
-
-        # 振り分け
         for index, row in df_news.iterrows():
-            if row['title'] in my_read_titles:
-                read_news.append(row)
-            else:
-                unread_news.append(row)
+            if row['title'] in my_read_titles: read_news.append(row)
+            else: unread_news.append(row)
 
-        # --- ① 未読エリア（重要・ボタンあり） ---
         st.subheader(f"⚡ 未読のお知らせ ({len(unread_news)})")
-        if not unread_news:
-            st.success("🎉 全て確認済みです！")
+        if not unread_news: st.success("🎉 全て確認済みです！")
         else:
             for row in unread_news:
                 is_important = str(row.get("important", "")).upper() == "TRUE"
@@ -224,9 +214,8 @@ if mode == "🏠 ホーム":
                         store_enc = urllib.parse.quote(str(st.session_state.store_name))
                         title_enc = urllib.parse.quote(str(row.get('title', '')))
                         link = f"{news_form_url}&{news_entry_store}={store_enc}&{news_entry_title}={title_enc}"
-                        st.link_button("✅ 既読にする", link, type="primary")
+                        st.link_button("✅ 既読", link, type="primary")
 
-        # --- ② 既読エリア（控えめ・ボタンなし） ---
         if read_news:
             st.divider()
             with st.expander(f"🗄️ 既読のお知らせ履歴 ({len(read_news)})"):
@@ -299,15 +288,16 @@ elif mode == "🔍 レシピ検索":
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
+                        # ★ここを修正しました（変数名 ingredient_dict に統一）★
                         with st.expander("詳細"):
                             st.markdown("**🛒 材料**")
                             ingredients_list = row["ingredients"]
                             for ingredient_name in ingredients_list:
                                 ingredient_name = str(ingredient_name).strip()
                                 matched_info = None
-                                if ingredient_name in ingredient_dict: matched_info = ing_dict[ingredient_name]
+                                if ingredient_name in ingredient_dict: matched_info = ingredient_dict[ingredient_name]
                                 else:
-                                    for master_name, info in ing_dict.items():
+                                    for master_name, info in ingredient_dict.items():
                                         if ingredient_name in master_name: matched_info = info; break
                                 if matched_info:
                                     with st.popover(f"ℹ️ {ingredient_name}"):
