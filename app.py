@@ -32,6 +32,9 @@ st.markdown("""
 <style>
     div[data-testid="column"] { align-self: center; }
     div.stButton > button { height: 3rem; border-radius: 20px; padding: 0px 10px; width: 100%; }
+    /* テーブルのデザイン調整 */
+    th { background-color: #f0f2f6; }
+    
     @media (max-width: 768px) {
         div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
             flex-direction: row !important; flex-wrap: nowrap !important; gap: 0.5rem !important;
@@ -67,22 +70,25 @@ def load_data():
     # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
+        # ★材料列の処理変更：リスト化せず、一旦文字列のまま扱う（後でパースする）
+        df_recipe["ingredients_raw"] = df_recipe["ingredients"].fillna("") 
+        # 検索用に従来のリストも作っておく
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
+        
         if "target_stores" not in df_recipe.columns: df_recipe["target_stores"] = "共通"
-        
-        # 画像URL変換
-        if "image" in df_recipe.columns: 
-            df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
-        
-        # ★動画URL変換（Googleドライブの場合のみ変換が必要）★
+        if "image" in df_recipe.columns: df_recipe["image"] = df_recipe["image"].apply(convert_google_drive_url)
         if "video" in df_recipe.columns:
-            # YouTubeはそのままでOK、Driveなら変換
             df_recipe["video"] = df_recipe["video"].apply(lambda x: convert_google_drive_url(x) if "drive.google.com" in str(x) else x)
-            
-        df_recipe = df_recipe.fillna("")
+        
+        # 新しい列がない場合の埋め合わせ
+        for col in ["tableware", "cutlery", "caution"]:
+            if col not in df_recipe.columns:
+                df_recipe[col] = "-"
+        
+        df_recipe = df_recipe.fillna("-")
     except: df_recipe = pd.DataFrame()
 
-    # ② 食材マスタ
+    # ②〜⑤（変更なし）
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing = df_ing.fillna("-")
@@ -92,13 +98,11 @@ def load_data():
         else: ing_dict = {}
     except: ing_dict = {}
 
-    # ③ お知らせ
     try:
         df_news = pd.read_csv(news_csv)
         df_news = df_news.fillna("")
     except: df_news = pd.DataFrame()
 
-    # ④ 店舗マスタ
     try:
         df_stores = pd.read_csv(store_csv, dtype=str)
         df_stores = df_stores.fillna("")
@@ -106,7 +110,6 @@ def load_data():
         if "password" in df_stores.columns: df_stores["password"] = df_stores["password"].str.strip()
     except: df_stores = pd.DataFrame()
 
-    # ⑤ 既読ログ
     try:
         df_log = pd.read_csv(news_log_csv)
         df_log = df_log.fillna("")
@@ -117,65 +120,163 @@ def load_data():
 df, ingredient_dict, df_news, df_stores, df_log = load_data()
 
 
-# --- 印刷用HTML生成関数 ---
-def generate_print_html(row, ing_dict):
-    ing_html = ""
-    for ing in row["ingredients"]:
-        ing = str(ing).strip()
-        detail = ""
-        if ing in ing_dict:
-            info = ing_dict[ing]
-            detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
-        elif any(ing in k for k in ing_dict):
-             for k, info in ing_dict.items():
-                 if ing in k:
-                     detail = f"<br><span style='font-size:0.8em; color:#666;'>（期限: {info.get('賞味期限','-')} / 保管: {info.get('納品温度帯(保管温度帯)','-')}）</span>"
-                     break
-        ing_html += f"<li><b>{ing}</b>{detail}</li>"
+# --- 材料文字列をパースして表データにする関数 ---
+def parse_ingredients_to_df(raw_text):
+    data = []
+    lines = str(raw_text).split('\n') # 改行で区切る
+    for line in lines:
+        parts = line.split('、') # 読点で区切る
+        if len(parts) >= 3:
+            data.append({"食材": parts[0], "使用量": parts[1], "備考": parts[2]})
+        elif len(parts) == 2:
+            data.append({"食材": parts[0], "使用量": parts[1], "備考": ""})
+        elif len(parts) == 1 and parts[0].strip():
+            data.append({"食材": parts[0], "使用量": "", "備考": ""})
+    
+    if not data:
+        return pd.DataFrame(columns=["食材", "使用量", "備考"])
+    return pd.DataFrame(data)
+
+
+# --- 印刷用HTML生成関数（表組み対応） ---
+def generate_print_html(row, ing_df):
+    # 材料表のHTML作成
+    ing_rows = ""
+    for _, item in ing_df.iterrows():
+        ing_rows += f"<tr><td>{item['食材']}</td><td>{item['使用量']}</td><td>{item['備考']}</td></tr>"
+
     steps_html = str(row["steps"]).replace("\n", "<br>")
-    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{row['title']}</title><style>body{{font-family:"Helvetica Neue",Arial,sans-serif;padding:40px;color:#333;}}h1{{border-bottom:3px solid #ff4b4b;padding-bottom:10px;margin-bottom:5px;}}.meta{{color:#666;margin-bottom:20px;font-size:0.9em;}}.container{{display:flex;gap:30px;margin-bottom:30px;}}.image-box{{flex:1;text-align:center;}}.image-box img{{max-width:100%;max-height:350px;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,0.1);}}.ing-box{{flex:1;background:#f9f9f9;padding:20px;border-radius:8px;}}h2{{background:#eee;padding:5px 10px;border-left:5px solid #ff4b4b;font-size:1.2em;}}ul{{padding-left:20px;line-height:1.6;}}.steps-box{{line-height:1.8;font-size:1.05em;}}@media print{{body{{padding:0;}}}}</style></head><body><h1>{row['title']}</h1><div class="meta">🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ 調理時間: {row['time']}</div><div class="container"><div class="image-box"><img src="{row['image']}" alt="料理画像"></div><div class="ing-box"><h2>🛒 材料・規格</h2><ul>{ing_html}</ul></div></div><div class="steps-box"><h2>📝 調理手順</h2><div>{steps_html}</div></div><script>window.onload=function(){{window.print();}}</script></body></html>"""
+    
+    # 画像のような仕様書スタイルHTML
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{row['title']}</title>
+        <style>
+            body {{ font-family: sans-serif; padding: 20px; color: #000; }}
+            .header-table {{ width: 100%; border-collapse: collapse; margin-bottom: 10px; }}
+            .header-table th, .header-table td {{ border: 2px solid #000; padding: 8px; text-align: center; }}
+            .header-table th {{ background-color: #eee; font-weight: bold; width: 15%; }}
+            .title {{ font-size: 24px; font-weight: bold; text-align: center; }}
+            
+            .main-container {{ display: flex; gap: 10px; border: 2px solid #000; }}
+            .left-col {{ flex: 1; padding: 10px; border-right: 2px solid #000; text-align: center; }}
+            .right-col {{ flex: 1; display: flex; flex-direction: column; }}
+            
+            .info-row {{ border-bottom: 2px solid #000; padding: 5px; min-height: 50px; }}
+            .info-row:last-child {{ border-bottom: none; }}
+            .info-label {{ font-weight: bold; display: block; margin-bottom: 5px; font-size: 0.9em; }}
+            
+            .ing-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }}
+            .ing-table th, .ing-table td {{ border: 1px solid #000; padding: 6px; }}
+            .ing-table th {{ background-color: #eee; text-align: center; }}
+            
+            .steps-box {{ border: 2px solid #000; border-top: none; padding: 15px; }}
+            
+            @media print {{ body {{ padding: 0; }} }}
+        </style>
+    </head>
+    <body>
+        <table class="header-table">
+            <tr>
+                <td class="title" colspan="4">{row['title']}</td>
+                <th>調理時間</th>
+                <td>{row['time']}</td>
+            </tr>
+        </table>
+
+        <div class="main-container">
+            <div class="left-col">
+                <img src="{row['image']}" style="max-width:100%; max-height:300px; object-fit:contain;">
+            </div>
+            <div class="right-col">
+                <div class="info-row">
+                    <span class="info-label">使用食器</span>
+                    {row['tableware']}
+                </div>
+                <div class="info-row">
+                    <span class="info-label">カトラリー/コンディメント</span>
+                    {row['cutlery']}
+                </div>
+                <div class="info-row" style="flex:1;">
+                    <span class="info-label">詳細・注意事項</span>
+                    {row['caution']}
+                </div>
+            </div>
+        </div>
+
+        <table class="ing-table">
+            <thead><tr><th>食材</th><th>使用量</th><th>備考</th></tr></thead>
+            <tbody>{ing_rows}</tbody>
+        </table>
+
+        <div class="steps-box">
+            <b>手順：</b><br>
+            {steps_html}
+        </div>
+        
+        <script>window.onload=function(){{window.print();}}</script>
+    </body>
+    </html>
+    """
     return html
 
-# --- 全画面表示用ダイアログ ---
+# --- 全画面表示用ダイアログ（仕様書レイアウト） ---
 @st.dialog("レシピ詳細", width="large")
 def show_recipe_modal(row, ing_dict):
     col_header, col_print = st.columns([8, 1])
     with col_header: st.header(row["title"])
+    
+    # 材料データの解析
+    ing_df = parse_ingredients_to_df(row["ingredients_raw"])
+
     with col_print:
-        html_data = generate_print_html(row, ing_dict)
+        html_data = generate_print_html(row, ing_df)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
     
-    if row["image"] and str(row["image"]).startswith("http"):
-        st.image(row["image"], use_container_width=True)
-    
-    st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
-    
-    # ★ここが新機能：動画プレーヤー★
-    # 「video」列が存在し、かつ中身がURLっぽい場合のみ表示
+    # 動画があれば表示
     if "video" in row and str(row["video"]).startswith("http"):
-        with st.expander("🎥 調理動画を見る", expanded=True):
+        with st.expander("🎥 調理動画を見る", expanded=False):
             st.video(row["video"])
 
+    # --- メインレイアウト（画像風） ---
+    
+    # 上段：画像と基本情報
+    c1, c2 = st.columns([1.2, 1])
+    
+    with c1:
+        if row["image"] and str(row["image"]).startswith("http"):
+            st.image(row["image"], use_container_width=True)
+        st.caption(f"⏱ 調理時間: {row['time']} | 📂 {row['category']}")
+
+    with c2:
+        # 右側の情報ボックス
+        with st.container(border=True):
+            st.markdown(f"**🍽️ 使用食器**")
+            st.write(row['tableware'])
+            st.divider()
+            st.markdown(f"**🍴 カトラリー・コンディメント**")
+            st.write(row['cutlery'])
+            st.divider()
+            st.markdown(f"**⚠️ 詳細・注意事項**")
+            st.info(row['caution'])
+
     st.divider()
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.subheader("🛒 材料")
-        for ingredient_name in row["ingredients"]:
-            ingredient_name = str(ingredient_name).strip()
-            matched_info = None
-            if ingredient_name in ingredient_dict: matched_info = ingredient_dict[ingredient_name]
-            else:
-                for master_name, info in ingredient_dict.items():
-                    if ingredient_name in master_name: matched_info = info; break
-            if matched_info:
-                with st.popover(f"ℹ️ {ingredient_name}"):
-                    st.markdown(f"**{matched_info.get('商品名', ingredient_name)}**")
-                    st.caption(f"期限: {matched_info.get('賞味期限', '-')}")
-                    st.caption(f"保管: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
-            else: st.write(f"・ {ingredient_name}")
-    with col2:
+
+    # 下段：材料表と手順
+    c3, c4 = st.columns([1, 1])
+    
+    with c3:
+        st.subheader("🛒 食材・分量")
+        # データフレームとしてきれいに表示（インデックスは隠す）
+        st.dataframe(ing_df, use_container_width=True, hide_index=True)
+
+    with c4:
         st.subheader("📝 作り方")
         st.write(row["steps"])
+
     st.divider()
     store_enc = urllib.parse.quote(str(st.session_state.store_name))
     recipe_enc = urllib.parse.quote(str(row['title']))
@@ -334,21 +435,9 @@ elif mode == "🔍 レシピ検索":
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
                         with st.expander("詳細"):
-                            st.markdown("**🛒 材料**")
-                            ingredients_list = row["ingredients"]
-                            for ingredient_name in ingredients_list:
-                                ingredient_name = str(ingredient_name).strip()
-                                matched_info = None
-                                if ingredient_name in ingredient_dict: matched_info = ingredient_dict[ingredient_name]
-                                else:
-                                    for master_name, info in ingredient_dict.items():
-                                        if ingredient_name in master_name: matched_info = info; break
-                                if matched_info:
-                                    with st.popover(f"ℹ️ {ingredient_name}"):
-                                        st.markdown(f"**{matched_info.get('商品名', ingredient_name)}**")
-                                        st.caption(f"期限: {matched_info.get('賞味期限', '-')}")
-                                        st.caption(f"保管: {matched_info.get('納品温度帯(保管温度帯)', '-')}")
-                                else: st.write(f"・ {ingredient_name}")
+                            # 詳細表示用の表
+                            ing_df_simple = parse_ingredients_to_df(row["ingredients_raw"])
+                            st.dataframe(ing_df_simple, use_container_width=True, hide_index=True)
                             st.markdown("---")
                             st.markdown("**📝 作り方**")
                             st.write(row["steps"])
@@ -385,7 +474,7 @@ elif mode == "🎓 検定":
                 if row["image"] and str(row["image"]).startswith("http"): st.image(row["image"], width=400)
                 else:
                     st.info("📷 画像なし")
-                    st.write("ヒント: " + " / ".join(row["ingredients"]))
+                    st.write("ヒント: " + str(row["ingredients_raw"]))
                 user_answer = st.radio("選択:", q["options"], key="quiz_radio")
                 if st.button("回答"):
                     if user_answer == q["correct_answer"]:
