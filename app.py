@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
-import os # ファイル存在確認用
+import os # ファイルの存在確認用
 from rapidfuzz import fuzz
 from streamlit_mic_recorder import speech_to_text
 
@@ -96,7 +96,7 @@ def load_data():
         df_recipe = df_recipe.fillna("-")
     except: df_recipe = pd.DataFrame()
 
-    # ②〜⑤（省略なし）
+    # ②〜⑤
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing.columns = df_ing.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
@@ -157,11 +157,8 @@ def generate_print_html(row, ing_df):
     cutlery_html = str(row["cutlery"]).replace("\n", "<br>")
     caution_html = str(row["caution"]).replace("\n", "<br>")
     
-    # 画像パスの処理（相対パス or URL）
+    # 印刷用画像パス処理（ファイルが存在しない場合はプレースホルダーにする）
     img_src = row['image']
-    # 印刷用HTMLでは、相対パス画像を表示させるのが少し難しいため
-    # 本来はBase64エンコードなどが必要ですが、今回は簡易的にそのままパスを入れます。
-    # ※ブラウザの印刷プレビューで画像が出ない場合は、画像を右クリック「画像アドレスをコピー」して確認してください。
     
     html = f"""
     <!DOCTYPE html>
@@ -229,10 +226,17 @@ def show_recipe_modal(row, ing_dict):
         html_data = generate_print_html(row, ing_df)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
     
-    # 画像表示（ローカルパス対応）
+    # ★ここを変更：画像表示に「安全装置」を追加（ファイルがないと落ちる問題を回避）★
     img_src = str(row["image"]).strip()
     if img_src and img_src != "-" and img_src != "nan":
-        st.image(img_src, use_container_width=True)
+        if img_src.startswith("http"):
+            st.image(img_src, use_container_width=True)
+        else:
+            # ローカルパスの場合、ファイルが存在するかチェック
+            if os.path.exists(img_src):
+                st.image(img_src, use_container_width=True)
+            else:
+                st.warning(f"画像が見つかりません: {img_src}")
     
     if "video" in row and str(row["video"]).startswith("http"):
         with st.expander("🎥 調理動画を見る", expanded=False):
@@ -440,17 +444,22 @@ elif mode == "🔍 レシピ検索":
                 col = cols[index % 3]
                 with col:
                     with st.container(border=True):
-                        # ★ここを変更：画像表示ロジック（ローカルパス対応）★
+                        # ★ここも修正：安全装置を追加★
                         img_src = str(row["image"]).strip()
                         if img_src and img_src != "-" and img_src != "nan":
-                            st.image(img_src, use_container_width=True)
-                        
+                            if img_src.startswith("http"):
+                                st.image(img_src, use_container_width=True)
+                            else:
+                                if os.path.exists(img_src):
+                                    st.image(img_src, use_container_width=True)
+                                else:
+                                    st.warning(f"Not Found: {img_src}")
+
                         if st.button(f"🔍 {row['title']}", key=f"btn_{index}", use_container_width=True):
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
                         with st.expander("詳細"):
                             ing_df_simple = parse_ingredients_to_df(row["ingredients_raw"])
-                            # アコーディオン内もポップオーバー対応
                             for _, item in ing_df_simple.iterrows():
                                 name = item['食材']
                                 cols_exp = st.columns([2, 1, 2])
