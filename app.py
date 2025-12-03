@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
-import os # ファイルの存在確認用
+import os
+import base64 # ★追加：画像を埋め込むためのライブラリ
 from rapidfuzz import fuzz
 from streamlit_mic_recorder import speech_to_text
 
@@ -76,7 +77,6 @@ def load_data():
                 names.append(parts[0].strip())
         return names
 
-    # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
         df_recipe.columns = df_recipe.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
@@ -96,7 +96,6 @@ def load_data():
         df_recipe = df_recipe.fillna("-")
     except: df_recipe = pd.DataFrame()
 
-    # ②〜⑤
     try:
         df_ing = pd.read_csv(ingredient_csv)
         df_ing.columns = df_ing.columns.str.replace('\n', '').str.replace('\r', '').str.strip()
@@ -146,6 +145,30 @@ def parse_ingredients_to_df(raw_text):
     return pd.DataFrame(data)
 
 
+# --- ★画像をBase64エンコードする関数（HTML埋め込み用）★ ---
+def get_image_base64(image_path):
+    # パスが空や無効な場合はダミーを返す
+    if not image_path or image_path == "-" or image_path == "nan":
+        return ""
+    
+    # URLの場合はそのまま返す（インターネット経由で表示されるため）
+    if str(image_path).startswith("http"):
+        return image_path
+    
+    # ローカルファイルの場合、Base64文字列に変換して埋め込む
+    if os.path.exists(image_path):
+        try:
+            with open(image_path, "rb") as img_file:
+                # バイナリをBase64に変換
+                b64_string = base64.b64encode(img_file.read()).decode()
+                # 拡張子に応じたMIMEタイプ（簡易判定）
+                mime = "image/png" if image_path.endswith(".png") else "image/jpeg"
+                return f"data:{mime};base64,{b64_string}"
+        except Exception:
+            return "" # エラー時は画像なし
+    return ""
+
+
 # --- 印刷用HTML生成関数 ---
 def generate_print_html(row, ing_df):
     ing_rows = ""
@@ -157,8 +180,8 @@ def generate_print_html(row, ing_df):
     cutlery_html = str(row["cutlery"]).replace("\n", "<br>")
     caution_html = str(row["caution"]).replace("\n", "<br>")
     
-    # 印刷用画像パス処理（ファイルが存在しない場合はプレースホルダーにする）
-    img_src = row['image']
+    # ★画像を埋め込み形式に変換★
+    img_src = get_image_base64(str(row['image']).strip())
     
     html = f"""
     <!DOCTYPE html>
@@ -226,13 +249,12 @@ def show_recipe_modal(row, ing_dict):
         html_data = generate_print_html(row, ing_df)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
     
-    # ★ここを変更：画像表示に「安全装置」を追加（ファイルがないと落ちる問題を回避）★
+    # 画像表示（安全装置付き）
     img_src = str(row["image"]).strip()
     if img_src and img_src != "-" and img_src != "nan":
         if img_src.startswith("http"):
             st.image(img_src, use_container_width=True)
         else:
-            # ローカルパスの場合、ファイルが存在するかチェック
             if os.path.exists(img_src):
                 st.image(img_src, use_container_width=True)
             else:
@@ -444,7 +466,7 @@ elif mode == "🔍 レシピ検索":
                 col = cols[index % 3]
                 with col:
                     with st.container(border=True):
-                        # ★ここも修正：安全装置を追加★
+                        # 画像表示（安全装置付き）
                         img_src = str(row["image"]).strip()
                         if img_src and img_src != "-" and img_src != "nan":
                             if img_src.startswith("http"):
