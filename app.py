@@ -32,7 +32,6 @@ st.markdown("""
 <style>
     div[data-testid="column"] { align-self: center; }
     div.stButton > button { height: 3rem; border-radius: 20px; padding: 0px 10px; width: 100%; }
-    /* テーブルのデザイン調整 */
     th { background-color: #f0f2f6; }
     
     @media (max-width: 768px) {
@@ -70,9 +69,7 @@ def load_data():
     # ① レシピ
     try:
         df_recipe = pd.read_csv(recipe_csv)
-        # ★材料列の処理変更：リスト化せず、一旦文字列のまま扱う（後でパースする）
         df_recipe["ingredients_raw"] = df_recipe["ingredients"].fillna("") 
-        # 検索用に従来のリストも作っておく
         df_recipe["ingredients"] = df_recipe["ingredients"].apply(lambda x: str(x).split("、") if pd.notnull(x) else [])
         
         if "target_stores" not in df_recipe.columns: df_recipe["target_stores"] = "共通"
@@ -80,7 +77,6 @@ def load_data():
         if "video" in df_recipe.columns:
             df_recipe["video"] = df_recipe["video"].apply(lambda x: convert_google_drive_url(x) if "drive.google.com" in str(x) else x)
         
-        # 新しい列がない場合の埋め合わせ
         for col in ["tableware", "cutlery", "caution"]:
             if col not in df_recipe.columns:
                 df_recipe[col] = "-"
@@ -123,31 +119,32 @@ df, ingredient_dict, df_news, df_stores, df_log = load_data()
 # --- 材料文字列をパースして表データにする関数 ---
 def parse_ingredients_to_df(raw_text):
     data = []
-    lines = str(raw_text).split('\n') # 改行で区切る
+    lines = str(raw_text).split('\n')
     for line in lines:
-        parts = line.split('、') # 読点で区切る
+        parts = line.split('、')
         if len(parts) >= 3:
             data.append({"食材": parts[0], "使用量": parts[1], "備考": parts[2]})
         elif len(parts) == 2:
             data.append({"食材": parts[0], "使用量": parts[1], "備考": ""})
         elif len(parts) == 1 and parts[0].strip():
             data.append({"食材": parts[0], "使用量": "", "備考": ""})
-    
     if not data:
         return pd.DataFrame(columns=["食材", "使用量", "備考"])
     return pd.DataFrame(data)
 
 
-# --- 印刷用HTML生成関数（表組み対応） ---
+# --- 印刷用HTML生成関数（改行対応版） ---
 def generate_print_html(row, ing_df):
-    # 材料表のHTML作成
     ing_rows = ""
     for _, item in ing_df.iterrows():
         ing_rows += f"<tr><td>{item['食材']}</td><td>{item['使用量']}</td><td>{item['備考']}</td></tr>"
 
+    # ★ここが重要：各項目の改行コード(\n)をHTMLの<br>に変換
     steps_html = str(row["steps"]).replace("\n", "<br>")
+    tableware_html = str(row["tableware"]).replace("\n", "<br>")
+    cutlery_html = str(row["cutlery"]).replace("\n", "<br>")
+    caution_html = str(row["caution"]).replace("\n", "<br>")
     
-    # 画像のような仕様書スタイルHTML
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -194,15 +191,15 @@ def generate_print_html(row, ing_df):
             <div class="right-col">
                 <div class="info-row">
                     <span class="info-label">使用食器</span>
-                    {row['tableware']}
+                    {tableware_html}
                 </div>
                 <div class="info-row">
                     <span class="info-label">カトラリー/コンディメント</span>
-                    {row['cutlery']}
+                    {cutlery_html}
                 </div>
                 <div class="info-row" style="flex:1;">
                     <span class="info-label">詳細・注意事項</span>
-                    {row['caution']}
+                    <span style="color:red;">{caution_html}</span>
                 </div>
             </div>
         </div>
@@ -216,34 +213,28 @@ def generate_print_html(row, ing_df):
             <b>手順：</b><br>
             {steps_html}
         </div>
-        
         <script>window.onload=function(){{window.print();}}</script>
     </body>
     </html>
     """
     return html
 
-# --- 全画面表示用ダイアログ（仕様書レイアウト） ---
+# --- 全画面表示用ダイアログ ---
 @st.dialog("レシピ詳細", width="large")
 def show_recipe_modal(row, ing_dict):
     col_header, col_print = st.columns([8, 1])
     with col_header: st.header(row["title"])
     
-    # 材料データの解析
     ing_df = parse_ingredients_to_df(row["ingredients_raw"])
 
     with col_print:
         html_data = generate_print_html(row, ing_df)
         st.download_button(label="🖨️", data=html_data, file_name=f"{row['title']}.html", mime="text/html", help="印刷用ファイルをダウンロード")
     
-    # 動画があれば表示
     if "video" in row and str(row["video"]).startswith("http"):
         with st.expander("🎥 調理動画を見る", expanded=False):
             st.video(row["video"])
 
-    # --- メインレイアウト（画像風） ---
-    
-    # 上段：画像と基本情報
     c1, c2 = st.columns([1.2, 1])
     
     with c1:
@@ -252,25 +243,24 @@ def show_recipe_modal(row, ing_dict):
         st.caption(f"⏱ 調理時間: {row['time']} | 📂 {row['category']}")
 
     with c2:
-        # 右側の情報ボックス
+        # 画面表示でも改行を反映させるために st.markdown を使用
         with st.container(border=True):
             st.markdown(f"**🍽️ 使用食器**")
-            st.write(row['tableware'])
+            st.markdown(str(row['tableware']).replace("\n", "  \n")) # Markdownの改行ルールに対応
             st.divider()
             st.markdown(f"**🍴 カトラリー・コンディメント**")
-            st.write(row['cutlery'])
+            st.markdown(str(row['cutlery']).replace("\n", "  \n"))
             st.divider()
             st.markdown(f"**⚠️ 詳細・注意事項**")
-            st.info(row['caution'])
+            # 注意事項は赤字やinfoボックスで見やすく
+            st.info(str(row['caution']).replace("\n", "  \n"))
 
     st.divider()
 
-    # 下段：材料表と手順
     c3, c4 = st.columns([1, 1])
     
     with c3:
         st.subheader("🛒 食材・分量")
-        # データフレームとしてきれいに表示（インデックスは隠す）
         st.dataframe(ing_df, use_container_width=True, hide_index=True)
 
     with c4:
@@ -435,7 +425,6 @@ elif mode == "🔍 レシピ検索":
                             show_recipe_modal(row, ingredient_dict)
                         st.caption(f"🏢 {row['target_stores']} | 📂 {row['category']} | ⏱ {row['time']}")
                         with st.expander("詳細"):
-                            # 詳細表示用の表
                             ing_df_simple = parse_ingredients_to_df(row["ingredients_raw"])
                             st.dataframe(ing_df_simple, use_container_width=True, hide_index=True)
                             st.markdown("---")
